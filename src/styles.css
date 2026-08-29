@@ -1,0 +1,240 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0c0b0a;
+  --color-surface: #161310;
+  --color-raised: #1e1a16;
+  --color-fg: #cbbfaa;
+  --color-muted: #8e8576;
+  --color-subtle: #6b6458;
+  --color-accent: #d8d2c6;
+  --color-accent-fg: #0c0b0a;
+  --color-border: color-mix(in oklab, var(--color-fg) 14%, transparent);
+  --color-danger: #b85c4a;
+  --color-sea: #1a5f6c;
+  --font-display: "Cinzel", "Times New Roman", serif;
+  --font-sans: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 28px;
+}
+
+@layer base {
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:not(:disabled):active {
+    filter: brightness(1.22);
+    box-shadow: inset 0 0 0 1px var(--color-accent);
+  }
+
+  * {
+    border-color: var(--color-border);
+  }
+}
+
+.empire-atlantis, .house-0 { --house: #1aa6a0; }
+.empire-lumuria, .house-1 { --house: #db2777; }
+.empire-eldorado, .house-2 { --house: #c17f3a; }
+.empire-aztec, .house-3 { --house: #c1121f; }
+.empire-asgard, .house-4 { --house: #5ec8e8; }
+.empire-tartaria, .house-5 { --house: #1d4ed8; }
+.empire-egypt, .house-6 { --house: #e8b86d; }
+.empire-babylon, .house-7 { --house: #7b2d8e; }
+.empire-cape, .house-8 { --house: #16a34a; }
+.empire-patagonia, .house-9 { --house: #3f5c4a; }
+.empire-gondwana, .house-10 { --house: #e07a5f; }
+.empire-thule, .house-11 { --house: #5a7ea0; }
+
+.house-swatch {
+  background: var(--house);
+}
+
+.map-relief {
+  pointer-events: none;
+}
+
+svg.touch-none {
+  cursor: grab;
+}
+
+svg.touch-none:active {
+  cursor: grabbing;
+}
+
+.map-land {
+  fill: rgb(8 12 14 / 0.04);
+  stroke: none;
+  cursor: pointer;
+  pointer-events: fill;
+  transition: fill 160ms ease, fill-opacity 160ms ease, stroke 160ms ease;
+}
+
+.map-land.is-owned {
+  fill: var(--house);
+  fill-opacity: 0.58;
+  mix-blend-mode: multiply;
+}
+
+.map-land.is-barbarian {
+  fill: #6e6c68;
+  fill-opacity: 0.36;
+}
+
+.map-border {
+  fill: none;
+  pointer-events: none;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.map-border.is-owned {
+  stroke: var(--house);
+  stroke-width: 2.8;
+}
+
+.map-border.is-barbarian {
+  stroke: #8e8c88;
+  stroke-width: 1.4;
+}
+
+.map-border.is-target {
+  stroke: #e7d7a8;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.map-border.is-selected {
+  stroke: #ffffff;
+  stroke-width: 5;
+  stroke-dasharray: none;
+}
+
+.map-zoom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 3;
+}
+
+.map-zoom button {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in oklab, var(--color-surface) 88%, transparent);
+  color: var(--color-fg);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-zoom button:hover {
+  background: var(--color-raised);
+}
+
+.map-land.is-selected {
+  fill: #ffffff;
+  fill-opacity: 0.4;
+  mix-blend-mode: normal;
+  stroke: none;
+  filter: none;
+}
+
+.map-land.is-barbarian.is-selected {
+  fill: #ffffff;
+  fill-opacity: 0.4;
+}
+
+.map-ocean {
+  fill: color-mix(in oklab, #d8efe8 70%, transparent);
+  font-family: var(--font-display);
+  letter-spacing: 0.18em;
+  pointer-events: none;
+}
+
+.map-markers,
+.map-marker {
+  pointer-events: none;
+}
+
+.map-label {
+  fill: #f7f1e6;
+  font-family: var(--font-display);
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: #0c1214;
+  letter-spacing: 0.04em;
+}
+
+.map-stat {
+  pointer-events: none;
+}
+
+.map-hp {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: #0c1214;
+}
+
+.map-hp.is-weak {
+  fill: #7dffa0;
+}
+
+.map-hp.is-mid {
+  fill: #f5d76e;
+}
+
+.map-hp.is-stout {
+  fill: #ff8a7a;
+}
+
+.map-info {
+  fill: #d8d2c6;
+  font-family: var(--font-sans);
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: #0c1214;
+  letter-spacing: 0.02em;
+}
+
+input[type="range"] {
+  accent-color: var(--color-accent);
+}
+
+.panel {
+  background: color-mix(in oklab, var(--color-surface) 92%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.action-sheet {
+  max-height: min(30vh, 260px);
+  overflow-y: auto;
+  padding: 0.55rem 0.7rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-land,
+  .reveal {
+    transition: none;
+  }
+}
