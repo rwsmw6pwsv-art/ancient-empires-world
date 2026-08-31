@@ -10,9 +10,9 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["roma", "iberia", "gaul", "balkans", "rhine"],
     color: "#1aa6a0",
     blurb:
-      "Starts in Graecia with walls and extra levy. Direwolves hunt the olive hills; stone and the Inner-Sea Temple sit on the doorstep — Europe pays if you cluster it.",
-    startLevyBonus: 2,
-    capitalCastle: true,
+      "Starts in Graecia on the Inner-Sea Temple. Direwolves hunt the olive hills; every European land yields extra stone.",
+    stoneOnEu: true,
+    castleCost: 4,
   },
   lumuria: {
     id: "lumuria",
@@ -22,7 +22,9 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["india", "indochina", "canton", "malaya", "gulf"],
     color: "#db2777",
     blurb:
-      "Wakes in India on gold, rhinos, and the Monsoon Stupa. Indochina and Cathay are a short march; Oceania’s timber is a sail away.",
+      "Wakes in India on gold, rhinos, and the Monsoon Stupa. Asian lands yield extra timber and harbours come cheap — a sail to Malaya and Oceania.",
+    woodOnAs: true,
+    portGoldCost: 3,
   },
   eldorado: {
     id: "eldorado",
@@ -32,9 +34,8 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["amazon", "grenada", "guiana", "brazil", "cerrado"],
     color: "#c17f3a",
     blurb:
-      "The Amazon opens walled, with extra levy and a gold jungle. Inland — sink mines, raise black caiman, and lock South America.",
-    startLevyBonus: 2,
-    capitalCastle: true,
+      "The Amazon opens on a gold jungle with a mine already sunk. Inland — raise black caiman and lock South America.",
+    capitalMine: true,
   },
   aztec: {
     id: "aztec",
@@ -44,7 +45,10 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["mexico", "yucatan", "sierra", "texas", "panama"],
     color: "#c1121f",
     blurb:
-      "Mexico holds gold, the Sun Pyramid, and jaguars, with coasts on both oceans. Yucatan and the isthmus are the path to two continents.",
+      "Mexico holds gold, the Sun Pyramid, and jaguars. Every Central American land pays extra gold; mines come cheap, and the isthmus opens two continents.",
+    goldOnCa: true,
+    mineGoldCost: 2,
+    mineStoneCost: 2,
   },
   asgard: {
     id: "asgard",
@@ -54,8 +58,9 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["alaska", "yukon", "cascade", "hudson", "hawaii"],
     color: "#5ec8e8",
     blurb:
-      "Alaska already has a port. Buffalo and Yukon gold lie next door; the first longship can reach Hawaii or the ice.",
-    capitalPort: true,
+      "Alaska wakes on the ice with buffalo at the gate. North American lands yield extra timber, and harbours come cheap for the Hawaii sail.",
+    woodOnNa: true,
+    portGoldCost: 3,
   },
   tartaria: {
     id: "tartaria",
@@ -65,7 +70,10 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["cathay", "gobi", "nippon", "siberia", "yakutia"],
     color: "#1d4ed8",
     blurb:
-      "Cathay opens on gold, pandas, and the Eastern Court. Siberian tigers range the east; Gobi stone and Nippon timber are the first grabs.",
+      "Cathay opens on gold, pandas, and the Eastern Court. Every Asian land yields extra stone, and mines come cheap — Gobi rock and Nippon timber are the first grabs.",
+    stoneOnAs: true,
+    mineGoldCost: 2,
+    mineStoneCost: 2,
   },
   egypt: {
     id: "egypt",
@@ -75,7 +83,9 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["nile", "maghreb", "horn", "guinea", "congo"],
     color: "#e8b86d",
     blurb:
-      "The Nile is gold, lions, and the Pyramids. Maghreb and the Horn are tribal gold camps — Africa’s tribute grows as you take them.",
+      "The Nile is gold, lions, and the Pyramids. African lands yield extra grain, and farms come cheap — Maghreb and the Horn are the first grabs.",
+    foodOnAf: true,
+    farmGoldCost: 2,
   },
   babylon: {
     id: "babylon",
@@ -85,9 +95,9 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["mesopotamia", "arabia", "persia", "anatolia", "armenia"],
     color: "#7b2d8e",
     blurb:
-      "Mesopotamia starts walled, with extra levy, the Hanging Gardens, and a sea gate. War elephants and desert gold ring the two rivers.",
-    startLevyBonus: 2,
-    capitalCastle: true,
+      "Mesopotamia opens on the Hanging Gardens and a sea gate. Every Middle Eastern land pays extra gold; markets come cheap. Elephants ring the two rivers.",
+    goldOnMe: true,
+    marketGoldCost: 2,
   },
   cape: {
     id: "cape",
@@ -97,10 +107,9 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["cape", "madagascar", "rift", "guinea", "congo"],
     color: "#16a34a",
     blurb:
-      "The Cape Light already keeps a port, and every African land you hold yields extra timber for cheap ships. Hippos hold the south.",
+      "The Cape Light sits on African timber: every African land you hold yields extra wood for cheap ships. Hippos hold the south.",
     woodOnAf: true,
     shipWoodCost: 4,
-    capitalPort: true,
   },
   patagonia: {
     id: "patagonia",
@@ -123,10 +132,11 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["coral", "outback", "westralia", "aotearoa", "tasmania", "polynesia"],
     color: "#e07a5f",
     blurb:
-      "Coral Coast gold, a starting port, and cheaper harbours. Every Oceanian land pays extra gold; crocodiles run the islands.",
+      "Coral Coast gold, a starting port and a keel, and cheaper harbours. Every Oceanian land pays extra gold; crocodiles run the islands.",
     goldOnOc: true,
     portGoldCost: 3,
     capitalPort: true,
+    startShip: true,
   },
   thule: {
     id: "thule",
@@ -136,10 +146,11 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
     homes: ["greenland", "labrador", "seaboard", "highlands", "fjords"],
     color: "#5a7ea0",
     blurb:
-      "The Ice Citadel already has a haven, and a land road into Labrador. North American stone is cheaper to quarry; polar bears hold the ice.",
+      "The Ice Citadel already has a haven and a keel, and a land road into Labrador. North American stone is cheaper to quarry; polar bears hold the ice.",
     stoneOnNa: true,
     castleCost: 6,
     capitalPort: true,
+    startShip: true,
   },
 };
 

@@ -53,9 +53,8 @@ export function TitleScreen() {
               fierce, and unclaimed. Expand, absorb, and outlast the other eleven.
             </p>
             <p>
-              Lock two continents and the age is yours at once. If no court holds two before turn 100, there is no
-              crown unless someone has at least two — then the most continents writes the chronicle, and the most
-              provinces if continents are tied.
+              Lock five continents and the age is yours at once. If no court holds five before turn 200, the most
+              continents writes the chronicle, and the most provinces if continents are tied.
             </p>
           </div>
         </header>

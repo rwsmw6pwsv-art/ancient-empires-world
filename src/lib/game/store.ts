@@ -7,6 +7,8 @@ import {
   buildMine,
   buildPort,
   buildShip,
+  buildRoad,
+  buildFarm,
   createNewGame,
   endTurn,
   legalMarchTargets,
@@ -40,7 +42,7 @@ interface GameStore {
   march: () => void;
   play: (card: CardId) => void;
   occupyHold: () => void;
-  occupyRecall: (recall: { levy: number; knights: number; dragons: number; beasts: number }) => void;
+  occupyRecall: (recall: { levy: number; knights: number; dragons: number; beasts: number; ships?: number }) => void;
   confirmAttack: () => void;
   cancelAttack: () => void;
   dismissWatch: () => void;
@@ -141,7 +143,7 @@ export const useGame = create<GameStore>((set, get) => ({
         sendLevy: Math.max(1, t.levy),
         sendKnights: 0,
         sendDragons: 0,
-        sendBeasts: 0,
+        sendBeasts: t.beasts ?? 0,
         pendingAttack: null,
       });
       return;
@@ -163,7 +165,7 @@ export const useGame = create<GameStore>((set, get) => ({
         sendLevy: Math.max(1, t.levy),
         sendKnights: 0,
         sendDragons: 0,
-        sendBeasts: 0,
+        sendBeasts: t.beasts ?? 0,
       });
       return;
     }
@@ -194,7 +196,11 @@ export const useGame = create<GameStore>((set, get) => ({
             ? buildCastle
             : kind === "market"
               ? buildMarket
-              : buildShip;
+              : kind === "road"
+                ? buildRoad
+                : kind === "farm"
+                  ? buildFarm
+                  : buildShip;
     set({ state: persist(fn(state, selected)) });
   },
   march: () => {

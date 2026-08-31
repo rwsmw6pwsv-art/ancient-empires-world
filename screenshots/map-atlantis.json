@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/play/atlantis/normal/capital",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Ancient Empires",
+      "hasCanvas": false,
+      "bodyTextLen": 2586,
+      "bodyTextHash": "0c4cf7ee1c2897f3887b7ebcf08945b09484333d2a863e365621c31daf902f5c",
+      "bodyTextPrefix": "Ancient Empires Your watch — Atlantis · Medium · Turn 1/100 · 0 ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/map-atlantis.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Ancient Empires",
+      "hasCanvas": false,
+      "bodyTextLen": 2564,
+      "bodyTextHash": "0200df030586e0698da3b17bcebf25235bf74b2af033beb69c614bf69eb6c3b2",
+      "bodyTextPrefix": "Ancient Empires Your watch — Atlantis · Medium · Turn 1/100 · 0 ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/map-atlantis-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/map-atlantis.json"
+}

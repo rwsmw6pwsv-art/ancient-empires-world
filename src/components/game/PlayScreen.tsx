@@ -172,7 +172,7 @@ export function PlayScreen({
       <nav className="grid shrink-0 grid-cols-3 gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
         {(
           [
-            ["train", "Train", Swords, "Raise men (1/1), knights (2/2), or one dragon (25/25) in the selected city. Beasts (5/2) raise only at your capital."],
+            ["train", "Train", Swords, "Raise men (1/1), knights (2/2), or one dragon (25/25) in the selected city. House beasts hunt (13–16 attack, 3 silver wages) and raise only at your capital."],
             ["march", "March", Footprints, "Set the host, then tap a neighbour to attack or reinforce."],
             ["build", "Build", Hammer, "Raise a port, mine, market, walls or ship in the selected land."],
           ] as const

@@ -19,6 +19,7 @@ import type {
 import {
   CAPITOL,
   CONTINENT_BONUS,
+  CONTINENT_NAMES,
   HOUSES,
   PLAYER_COUNT,
   SAVE_VERSION,
@@ -28,9 +29,22 @@ import {
   UNIT_DEF,
   CITY_DEF,
   WALL_DEF,
+  WALL_IMPROVE,
   TRIBAL_DEF,
   DRAGON_CAP,
+  WORKS_CAP,
+  SHIPS_CAP,
+  SHIPS_PER_RANK,
   WIN_CONTINENTS,
+  LEVY_COMMISSION,
+  BEAST_WAGE,
+  CAPTURE_GOLD_BASE,
+  CONTINENT_BREAK_GOLD,
+  CAPITAL_SILVER,
+  SILVER_PER_LAND,
+  FOOD_PER_POP,
+  START_LEVY,
+  START_BEASTS,
 } from "./types";
 import {
   BARBARIAN_IDS,
@@ -79,9 +93,47 @@ export function forceDefense(
   );
 }
 
+export function worksRank(t: TerritoryState, kind: JobKind): number {
+  const stored =
+    kind === "market"
+      ? t.marketRank
+      : kind === "port"
+        ? t.portRank
+        : kind === "mine"
+          ? t.mineRank
+          : kind === "castle"
+            ? t.castleRank
+            : kind === "farm"
+              ? t.farmRank
+              : 0;
+  if ((stored ?? 0) > 0) return stored!;
+  if (kind === "market") return t.market ? 1 : 0;
+  if (kind === "port") return t.port ? 1 : 0;
+  if (kind === "mine") return t.mine ? 1 : 0;
+  if (kind === "castle") return t.castle ? 1 : 0;
+  if (kind === "farm") return t.farm ? 1 : 0;
+  return 0;
+}
+
+export function shipsCap(t: TerritoryState): number {
+  const r = worksRank(t, "port");
+  if (r < 1) return 1;
+  return Math.min(SHIPS_CAP, r * SHIPS_PER_RANK);
+}
+
+function berthShip(from: TerritoryState, to: TerritoryState): boolean {
+  if (to.ships < shipsCap(to)) {
+    to.ships += 1;
+    return true;
+  }
+  from.ships += 1;
+  return false;
+}
+
 export function worksDefense(t: TerritoryState): number {
   if (isBarbarian(t.owner)) return TRIBAL_DEF;
-  return CITY_DEF + (t.castle ? WALL_DEF : 0);
+  const walls = worksRank(t, "castle");
+  return CITY_DEF + (walls > 0 ? WALL_DEF + (walls - 1) * WALL_IMPROVE : 0);
 }
 
 export function defenseStrength(t: TerritoryState, beastDef = 0): number {
@@ -156,34 +208,73 @@ export function realmRecruits(lands: number): number {
   return Math.max(0, Math.floor(lands / 2));
 }
 
+export function realmPopulation(state: GameState, player: PlayerId): number {
+  return ownedIds(state, player).reduce((n, id) => n + (state.territories[id]!.population ?? 0), 0);
+}
+
+export function foodNeed(state: GameState, player: PlayerId): number {
+  return Math.ceil(realmPopulation(state, player) / FOOD_PER_POP);
+}
+
+export function cityPopCap(t: TerritoryState): number {
+  const capital = Object.values(CAPITOL).includes(t.id);
+  return 4 + worksRank(t, "farm") + worksRank(t, "market") + worksRank(t, "castle") + (capital ? 2 : 0);
+}
+
 export function incomeFor(state: GameState, player: PlayerId) {
   const p = playerOf(state, player);
   const def = empireOf(p.empire);
   const ids = ownedIds(state, player);
   const n = ids.length;
   let gold = n;
+  let silver = n * SILVER_PER_LAND;
   let wood = Math.floor(n / 3);
   let stone = Math.floor(n / 3);
   let metal = Math.floor(n / 4);
+  let food = n;
   for (const id of ids) {
     const t = terr(state, id);
     const meta = TERRITORY_BY_ID[id]!;
     gold += 2;
-    if (t.mine) gold += 2;
-    if (t.port) gold += 1;
-    if (t.market) gold += 1;
+    const mineR = worksRank(t, "mine");
+    const portR = worksRank(t, "port");
+    const marketR = worksRank(t, "market");
+    const farmR = worksRank(t, "farm");
+    if (mineR) gold += 2 * mineR;
+    if (portR) gold += portR;
+    if (marketR) gold += marketR;
+    if (farmR) food += 2 * farmR;
     const rich = landscapeOf(id).resource;
     if (rich === "gold") gold += 2;
+    if (rich === "silver") silver += 3;
+    if (rich === "silver" && mineR) silver += 2 * mineR;
+    if (Object.values(CAPITOL).includes(id)) silver += CAPITAL_SILVER;
     if (rich === "wood") wood += 2;
     if (rich === "stone") stone += 2;
     if (rich === "metal") metal += 2;
-    if (rich && (t.market || t.port)) gold += 2;
+    if (rich === "food") food += 3;
+    if (rich === "food" && farmR) food += 2 * farmR;
+    if (rich && (marketR || portR)) gold += 2 * Math.max(marketR, portR);
     if (def.woodOnAf && meta.continent === "af") wood += 1;
+    if (def.woodOnAs && meta.continent === "as") wood += 1;
+    if (def.woodOnNa && meta.continent === "na") wood += 1;
     if (def.stoneOnSa && meta.continent === "sa") stone += 1;
-    if (def.goldOnOc && meta.continent === "oc") gold += 1;
     if (def.stoneOnNa && meta.continent === "na") stone += 1;
+    if (def.stoneOnEu && meta.continent === "eu") stone += 1;
+    if (def.stoneOnAs && meta.continent === "as") stone += 1;
+    if (def.goldOnOc && meta.continent === "oc") gold += 1;
+    if (def.goldOnCa && meta.continent === "ca") gold += 1;
+    if (def.goldOnMe && meta.continent === "me") gold += 1;
+    if (def.foodOnAf && meta.continent === "af") food += 1;
   }
-  const kinds: Record<"gold" | "wood" | "stone" | "metal", number> = { gold: 0, wood: 0, stone: 0, metal: 0 };
+  const kinds: Record<"gold" | "silver" | "wood" | "stone" | "metal" | "food", number> = {
+    gold: 0,
+    silver: 0,
+    wood: 0,
+    stone: 0,
+    metal: 0,
+    food: 0,
+  };
   for (const id of ids) {
     const rich = landscapeOf(id).resource;
     if (rich) kinds[rich] += 1;
@@ -197,19 +288,59 @@ export function incomeFor(state: GameState, player: PlayerId) {
     if (held >= 2) gold += held * 2;
   }
   for (const c of continentsHeld(state, player)) gold += CONTINENT_BONUS[c];
-  return { gold, wood, stone, metal };
+  gold += tradeFor(state, player);
+  return { gold, silver, wood, stone, metal, food };
+}
+
+export function tradeFor(state: GameState, player: PlayerId): number {
+  const p = playerOf(state, player);
+  const ids = ownedIds(state, player);
+  const n = ids.length;
+  let trade = Math.max(0, n - 1);
+  const footholds = new Set(ids.map((id) => TERRITORY_BY_ID[id]!.continent));
+  trade += footholds.size;
+  trade += continentsHeld(state, player).length * 2;
+  trade += Math.floor((p.gold + p.silver) / 8);
+  let ports = 0;
+  let ships = 0;
+  let veins = 0;
+  let roads = 0;
+  for (const id of ids) {
+    const t = terr(state, id);
+    ports += worksRank(t, "port");
+    ships += t.ships;
+    const rich = landscapeOf(id).resource;
+    if (rich === "gold" || rich === "silver") veins += 1;
+    if (Object.values(CAPITOL).includes(id)) veins += 1;
+    trade += worksRank(t, "market");
+    trade += worksRank(t, "mine");
+    trade += worksRank(t, "farm");
+    if (t.road) {
+      for (const nb of landNeighbors(id)) {
+        if (nb <= id) continue;
+        const u = state.territories[nb];
+        if (u && u.owner === player && u.road) roads += 1;
+      }
+    }
+  }
+  trade += ports;
+  trade += ships * 2;
+  trade += veins;
+  trade += roads * 2;
+  trade += Math.floor(realmPopulation(state, player) / 2);
+  return trade;
 }
 
 export function upkeepFor(state: GameState, player: PlayerId) {
-  let gold = 0;
+  let silver = 0;
   for (const id of ownedIds(state, player)) {
     const t = terr(state, id);
-    gold += t.knights;
-    gold += t.dragons * 2;
-    gold += t.beasts ?? 0;
-    gold += t.ships;
+    silver += Math.max(t.levy > 0 ? 1 : 0, Math.floor(t.levy / LEVY_COMMISSION));
+    silver += t.knights;
+    silver += t.dragons;
+    silver += (t.beasts ?? 0) * BEAST_WAGE;
   }
-  return { gold };
+  return { silver };
 }
 
 function pay(p: PlayerState, gold: number, wood = 0, stone = 0, metal = 0): boolean {
@@ -221,14 +352,59 @@ function pay(p: PlayerState, gold: number, wood = 0, stone = 0, metal = 0): bool
   return true;
 }
 
-function grantSpoils(state: GameState, player: PlayerId, territoryId: string) {
+function grantSpoils(
+  state: GameState,
+  player: PlayerId,
+  territoryId: string,
+  defHost: number,
+  brokeContinent: boolean,
+) {
   const p = playerOf(state, player);
-  p.gold += 3;
+  p.gold += CAPTURE_GOLD_BASE + Math.max(0, defHost);
+  if (brokeContinent) {
+    const c = TERRITORY_BY_ID[territoryId]!.continent;
+    p.gold += CONTINENT_BREAK_GOLD + CONTINENT_BONUS[c];
+  }
   const rich = landscapeOf(territoryId).resource;
   if (rich === "gold") p.gold += 2;
+  if (rich === "silver") p.silver += 2;
   if (rich === "wood") p.wood += 2;
   if (rich === "stone") p.stone += 2;
   if (rich === "metal") p.metal += 2;
+}
+
+function defendingHost(t: TerritoryState): number {
+  return t.levy + t.knights + t.dragons + (t.beasts ?? 0);
+}
+
+function holdsContinent(state: GameState, player: PlayerId, continent: ContinentId): boolean {
+  const lands = continentTerritories(continent);
+  return lands.length > 0 && lands.every((d) => state.territories[d.id]!.owner === player);
+}
+
+function placeDragon(state: GameState, player: PlayerId, preferId: string, fallbackId: string): string | null {
+  const tryPut = (id: string) => {
+    const t = state.territories[id];
+    if (!t || t.owner !== player || t.dragons >= DRAGON_CAP) return false;
+    t.dragons += 1;
+    return true;
+  };
+  if (tryPut(preferId)) return preferId;
+  if (fallbackId !== preferId && tryPut(fallbackId)) return fallbackId;
+  for (const id of ownedIds(state, player)) {
+    if (tryPut(id)) return id;
+  }
+  return null;
+}
+
+function tribeBand(diff: Difficulty) {
+  if (diff === "easy") {
+    return { min: 1, max: 3, cap: 4, grow: 0.2, pressGrow: 0.08, knight: 0.03, knightLevy: 4 };
+  }
+  if (diff === "hard") {
+    return { min: 7, max: 9, cap: 10, grow: 0.6, pressGrow: 0.28, knight: 0.16, knightLevy: 6 };
+  }
+  return { min: 4, max: 6, cap: 6, grow: 0.42, pressGrow: 0.18, knight: 0.08, knightLevy: 4 };
 }
 
 function grantTerritory(
@@ -241,21 +417,40 @@ function grantTerritory(
   const def = empireOf(playerOf(state, owner).empire);
   const meta = TERRITORY_BY_ID[id]!;
   t.owner = owner;
-  if (def.capitalPort && meta.id === def.capitol && meta.coastal) t.port = true;
+  if (def.capitalPort && meta.id === def.capitol && meta.coastal) {
+    t.port = true;
+    t.portRank = Math.max(t.portRank ?? 0, 1);
+  }
+  if (def.capitalMine && meta.id === def.capitol && !meta.coastal) {
+    t.mine = true;
+    t.mineRank = Math.max(t.mineRank ?? 0, 1);
+  }
   Object.assign(t, extras);
+  if (t.port) t.portRank = Math.max(t.portRank ?? 0, 1);
+  if (t.castle) t.castleRank = Math.max(t.castleRank ?? 0, 1);
+  if (t.mine) t.mineRank = Math.max(t.mineRank ?? 0, 1);
+  if (t.market) t.marketRank = Math.max(t.marketRank ?? 0, 1);
+  if (t.farm) t.farmRank = Math.max(t.farmRank ?? 0, 1);
+  if ((t.population ?? 0) < 1) t.population = 1;
 }
 
 function seedBarbarians(state: GameState, rng: () => number) {
+  const band = tribeBand(state.difficulty);
   for (const id of BARBARIAN_IDS) {
     const t = terr(state, id);
     t.owner = "barbarian";
-    t.levy = randInt(rng, 4, 6);
-    t.knights = rng() < 0.2 ? 1 : 0;
+    t.levy = randInt(rng, band.min, band.max);
+    t.knights = rng() < (state.difficulty === "hard" ? 0.35 : state.difficulty === "easy" ? 0.05 : 0.2) ? 1 : 0;
     t.castle = false;
+    t.castleRank = 0;
     t.pressure = 0;
+    t.population = 1;
   }
   const labrador = state.territories.labrador;
-  if (labrador && labrador.owner === "barbarian") labrador.levy = Math.max(labrador.levy, 5);
+  if (labrador && labrador.owner === "barbarian") {
+    const floor = state.difficulty === "easy" ? band.max : state.difficulty === "hard" ? 8 : 5;
+    labrador.levy = Math.max(labrador.levy, floor);
+  }
 }
 
 export function createNewGame(opts: {
@@ -279,9 +474,12 @@ export function createNewGame(opts: {
     id: i as PlayerId,
     empire,
     gold: 8,
+    silver: 12,
     wood: 4,
     stone: 3,
     metal: 4,
+    food: 8,
+    lastLands: 1,
     alive: true,
     human: i === 0,
     cards: ["levy", "forge"] as CardId[],
@@ -300,8 +498,16 @@ export function createNewGame(opts: {
       mine: false,
       port: false,
       market: false,
+      road: false,
+      castleRank: 0,
+      mineRank: 0,
+      portRank: 0,
+      marketRank: 0,
+      farm: false,
+      farmRank: 0,
       ships: 0,
       pressure: 0,
+      population: 0,
     };
   }
 
@@ -324,12 +530,15 @@ export function createNewGame(opts: {
   for (const p of players) {
     const def = empireOf(p.empire);
     const cap = def.capitol;
-    const startLevy =
-      (p.human ? 6 : difficulty === "hard" ? 8 : difficulty === "easy" ? 4 : 5) + (def.startLevyBonus ?? 0);
+    const startLevy = START_LEVY[difficulty];
     grantTerritory(state, cap, p.id, {
       levy: startLevy,
       knights: 0,
-      castle: Boolean(def.capitalCastle),
+      beasts: START_BEASTS[difficulty],
+      castle: true,
+      road: true,
+      population: 4,
+      ships: def.startShip ? 1 : 0,
     });
   }
   seedBarbarians(state, rng);
@@ -349,8 +558,9 @@ export function legalMarchTargets(state: GameState, fromId: string): string[] {
   if (isBarbarian(from.owner)) return [];
   const player = from.owner;
   const land = landNeighbors(fromId);
+  const fromMeta = TERRITORY_BY_ID[fromId];
   const sea =
-    from.port && from.ships > 0
+    fromMeta?.coastal && from.ships > 0
       ? seaNeighbors(fromId).filter((id) => {
           const dest = TERRITORY_BY_ID[id];
           const dt = state.territories[id];
@@ -458,13 +668,23 @@ export function resolveAttack(
   if (!legal.includes(toId)) return state;
 
   const seaHop = !landNeighbors(fromId).includes(toId);
+  let convoy = 0;
   if (seaHop) {
-    if (!from.port || from.ships < 1) return state;
+    if (!TERRITORY_BY_ID[fromId]?.coastal || from.ships < 1) return state;
     from.ships -= 1;
+    convoy = 1;
   }
 
   if (isBarbarian(to.owner)) to.pressure = 3;
   const tribalCamp = isBarbarian(to.owner);
+  const defHost = defendingHost(to);
+  const prevOwner = to.owner;
+  const destCont = TERRITORY_BY_ID[toId]!.continent;
+  const brokeContinent =
+    prevOwner !== "barbarian" && holdsContinent(next, prevOwner, destCont);
+  const wasCapitol =
+    prevOwner !== "barbarian" && empireOf(playerOf(next, prevOwner).empire).capitol === toId;
+  const continentsBefore = continentsHeld(next, player).length;
 
   from.levy -= force.levy;
   from.knights -= force.knights;
@@ -480,7 +700,8 @@ export function resolveAttack(
       to.dragons = DRAGON_CAP;
     }
     to.beasts = (to.beasts ?? 0) + sendBeasts;
-    log(next, `${empireOf(playerOf(next, player).empire).name} marches into ${TERRITORY_BY_ID[toId]!.name}.`);
+    if (convoy) berthShip(from, to);
+    log(next, `${empireOf(playerOf(next, player).empire).name} ${convoy ? "sails" : "marches"} into ${TERRITORY_BY_ID[toId]!.name}.`);
     next.marchFrom = null;
     return next;
   }
@@ -554,9 +775,11 @@ export function resolveAttack(
       to.dragons = DRAGON_CAP;
     }
     to.ships = 0;
+    if (convoy) berthShip(from, to);
     to.pressure = 0;
+    if ((to.population ?? 0) < 1) to.population = 1;
+    grantSpoils(next, player, toId, defHost, brokeContinent);
     if (prev === "barbarian") {
-      grantSpoils(next, player, toId);
       to.levy += 1;
       log(next, `${attackerName} takes ${place} and strips the camp.`);
     } else {
@@ -565,7 +788,19 @@ export function resolveAttack(
         playerOf(next, prev).alive = false;
         log(next, `${empireOf(playerOf(next, prev).empire).name} is broken.`);
       }
-      log(next, `${attackerName} takes ${place}.`);
+      if (brokeContinent) {
+        log(next, `${attackerName} cracks the ${CONTINENT_NAMES[destCont]} lock on ${place}.`);
+      } else {
+        log(next, `${attackerName} takes ${place}.`);
+      }
+    }
+    if (wasCapitol) {
+      const nest = placeDragon(next, player, toId, fromId);
+      if (nest) log(next, `A dragon wakes in ${TERRITORY_BY_ID[nest]!.name} over the fallen capital.`);
+    }
+    if (continentsHeld(next, player).length > continentsBefore) {
+      const nest = placeDragon(next, player, toId, fromId);
+      if (nest) log(next, `${CONTINENT_NAMES[destCont]} yields a dragon in ${TERRITORY_BY_ID[nest]!.name}.`);
     }
   } else {
     to.levy = dLevy;
@@ -576,6 +811,7 @@ export function resolveAttack(
     from.knights += aKnights;
     from.dragons += aDragons;
     from.beasts = (from.beasts ?? 0) + aBeasts;
+    if (convoy && aliveAtk() > 0) from.ships += convoy;
     if (tribalCamp) to.pressure = 3;
     log(next, `${attackerName} is thrown back from ${place}.`);
   }
@@ -596,7 +832,7 @@ export function recallOccupiers(
   state: GameState,
   fromId: string,
   toId: string,
-  recall: { levy: number; knights: number; dragons: number; beasts: number },
+  recall: { levy: number; knights: number; dragons: number; beasts: number; ships?: number },
 ): GameState {
   const next = clone(state);
   const from = terr(next, fromId);
@@ -623,6 +859,12 @@ export function recallOccupiers(
   from.knights += knights;
   from.dragons += dragons;
   from.beasts = (from.beasts ?? 0) + beasts;
+  const returning = levy + knights + dragons + beasts;
+  const sailHome = (recall.ships ?? 0) > 0 && returning > 0 && (to.ships ?? 0) > 0 && seaNeighbors(toId).includes(fromId);
+  if (sailHome) {
+    to.ships -= 1;
+    berthShip(to, from);
+  }
   log(next, `${empireOf(playerOf(next, player).empire).name} sends a host back to ${TERRITORY_BY_ID[fromId]!.name}.`);
   return next;
 }
@@ -666,15 +908,35 @@ function shipCost(p: PlayerState) {
   return { gold: 3, wood: def.shipWoodCost ?? 5, stone: 0 };
 }
 
-function marketCost(_p: PlayerState) {
-  return { gold: 4, wood: 2, stone: 0 };
+function marketCost(p: PlayerState) {
+  const def = empireOf(p.empire);
+  return { gold: def.marketGoldCost ?? 4, wood: 2, stone: 0 };
 }
 
-export function worksCost(p: PlayerState, kind: JobKind) {
+function roadCost(_p: PlayerState) {
+  return { gold: 3, wood: 4, stone: 1 };
+}
+
+function farmCost(p: PlayerState) {
+  const def = empireOf(p.empire);
+  return { gold: def.farmGoldCost ?? 3, wood: 2, stone: 0 };
+}
+
+function improveCost(rank: number) {
+  return { gold: 4 + 4 * rank, wood: 0, stone: 0 };
+}
+
+export function worksCost(p: PlayerState, kind: JobKind, t?: TerritoryState) {
+  if (t && (kind === "port" || kind === "mine" || kind === "castle" || kind === "market" || kind === "farm")) {
+    const rank = worksRank(t, kind);
+    if (rank > 0) return improveCost(rank);
+  }
   if (kind === "port") return portCost(p);
   if (kind === "mine") return mineCost(p);
   if (kind === "castle") return castleCost(p);
   if (kind === "ship") return shipCost(p);
+  if (kind === "road") return roadCost(p);
+  if (kind === "farm") return farmCost(p);
   return marketCost(p);
 }
 
@@ -689,61 +951,135 @@ function enqueue(state: GameState, kind: JobKind, territoryId: string, remaining
   state.jobs.push(job);
 }
 
+function startImproveable(
+  next: GameState,
+  t: TerritoryState,
+  kind: "port" | "mine" | "castle" | "market" | "farm",
+  first: { gold: number; wood: number; stone: number },
+  firstTurns: number,
+  firstLine: string,
+  improveLine: string,
+): GameState | null {
+  const p = current(next);
+  const rank = worksRank(t, kind);
+  if (t.owner !== p.id || rank >= WORKS_CAP || constructionBusy(next, t.id)) return null;
+  if (rank === 0) {
+    if (!pay(p, first.gold, first.wood, first.stone)) return null;
+    enqueue(next, kind, t.id, firstTurns);
+    log(next, firstLine);
+  } else {
+    const cost = improveCost(rank);
+    if (!pay(p, cost.gold, cost.wood, cost.stone)) return null;
+    enqueue(next, kind, t.id, 1);
+    log(next, improveLine);
+  }
+  return next;
+}
+
 export function raiseWorks(state: GameState, territoryId: string, kind: JobKind): GameState {
   if (kind === "castle") return buildCastle(state, territoryId);
   if (kind === "mine") return buildMine(state, territoryId);
   if (kind === "port") return buildPort(state, territoryId);
   if (kind === "market") return buildMarket(state, territoryId);
+  if (kind === "road") return buildRoad(state, territoryId);
+  if (kind === "farm") return buildFarm(state, territoryId);
   return buildShip(state, territoryId);
 }
 
 export function buildPort(state: GameState, territoryId: string): GameState {
   const next = clone(state);
-  const p = current(next);
   const t = terr(next, territoryId);
   const meta = TERRITORY_BY_ID[territoryId]!;
-  if (t.owner !== p.id || t.port || !meta.coastal || constructionBusy(next, territoryId)) return state;
-  const cost = portCost(p);
-  if (!pay(p, cost.gold, cost.wood, cost.stone)) return state;
-  enqueue(next, "port", territoryId, 1);
-  log(next, `${empireOf(p.empire).name} lays a port at ${meta.name}.`);
-  return next;
+  if (!meta.coastal) return state;
+  const p = current(next);
+  const started = startImproveable(
+    next,
+    t,
+    "port",
+    portCost(p),
+    1,
+    `${empireOf(p.empire).name} lays a port at ${meta.name}.`,
+    `${empireOf(p.empire).name} improves the port at ${meta.name}.`,
+  );
+  return started ?? state;
 }
 
 export function buildMine(state: GameState, territoryId: string): GameState {
   const next = clone(state);
-  const p = current(next);
   const t = terr(next, territoryId);
   const meta = TERRITORY_BY_ID[territoryId]!;
-  if (t.owner !== p.id || t.mine || meta.coastal || constructionBusy(next, territoryId)) return state;
-  const cost = mineCost(p);
-  if (!pay(p, cost.gold, cost.wood, cost.stone)) return state;
-  enqueue(next, "mine", territoryId, 1);
-  log(next, `${empireOf(p.empire).name} sinks a mine in ${meta.name}.`);
-  return next;
+  if (meta.coastal) return state;
+  const p = current(next);
+  const started = startImproveable(
+    next,
+    t,
+    "mine",
+    mineCost(p),
+    1,
+    `${empireOf(p.empire).name} sinks a mine in ${meta.name}.`,
+    `${empireOf(p.empire).name} deepens the mine in ${meta.name}.`,
+  );
+  return started ?? state;
 }
 
 export function buildCastle(state: GameState, territoryId: string): GameState {
   const next = clone(state);
-  const p = current(next);
   const t = terr(next, territoryId);
-  if (t.owner !== p.id || t.castle || constructionBusy(next, territoryId)) return state;
-  const cost = castleCost(p);
-  if (!pay(p, cost.gold, cost.wood, cost.stone)) return state;
-  enqueue(next, "castle", territoryId, 2);
-  log(next, `${empireOf(p.empire).name} raises walls in ${TERRITORY_BY_ID[territoryId]!.name}.`);
-  return next;
+  const p = current(next);
+  const rank = worksRank(t, "castle");
+  const started = startImproveable(
+    next,
+    t,
+    "castle",
+    castleCost(p),
+    rank === 0 ? 2 : 1,
+    `${empireOf(p.empire).name} raises walls in ${TERRITORY_BY_ID[territoryId]!.name}.`,
+    `${empireOf(p.empire).name} strengthens the walls in ${TERRITORY_BY_ID[territoryId]!.name}.`,
+  );
+  return started ?? state;
 }
 
 export function buildMarket(state: GameState, territoryId: string): GameState {
   const next = clone(state);
+  const t = terr(next, territoryId);
+  const p = current(next);
+  const started = startImproveable(
+    next,
+    t,
+    "market",
+    marketCost(p),
+    1,
+    `${empireOf(p.empire).name} opens a market in ${TERRITORY_BY_ID[territoryId]!.name}.`,
+    `${empireOf(p.empire).name} expands the market in ${TERRITORY_BY_ID[territoryId]!.name}.`,
+  );
+  return started ?? state;
+}
+
+export function buildFarm(state: GameState, territoryId: string): GameState {
+  const next = clone(state);
+  const t = terr(next, territoryId);
+  const p = current(next);
+  const started = startImproveable(
+    next,
+    t,
+    "farm",
+    farmCost(p),
+    1,
+    `${empireOf(p.empire).name} sows farms in ${TERRITORY_BY_ID[territoryId]!.name}.`,
+    `${empireOf(p.empire).name} expands the farms in ${TERRITORY_BY_ID[territoryId]!.name}.`,
+  );
+  return started ?? state;
+}
+
+export function buildRoad(state: GameState, territoryId: string): GameState {
+  const next = clone(state);
   const p = current(next);
   const t = terr(next, territoryId);
-  if (t.owner !== p.id || t.market || constructionBusy(next, territoryId)) return state;
-  const cost = marketCost(p);
+  if (t.owner !== p.id || t.road || constructionBusy(next, territoryId)) return state;
+  const cost = roadCost(p);
   if (!pay(p, cost.gold, cost.wood, cost.stone)) return state;
-  enqueue(next, "market", territoryId, 1);
-  log(next, `${empireOf(p.empire).name} opens a market in ${TERRITORY_BY_ID[territoryId]!.name}.`);
+  enqueue(next, "road", territoryId, 1);
+  log(next, `${empireOf(p.empire).name} lays a road through ${TERRITORY_BY_ID[territoryId]!.name}.`);
   return next;
 }
 
@@ -751,7 +1087,7 @@ export function buildShip(state: GameState, territoryId: string): GameState {
   const next = clone(state);
   const p = current(next);
   const t = terr(next, territoryId);
-  if (t.owner !== p.id || !t.port || constructionBusy(next, territoryId)) return state;
+  if (t.owner !== p.id || !t.port || constructionBusy(next, territoryId) || t.ships >= shipsCap(t)) return state;
   const cost = shipCost(p);
   if (!pay(p, cost.gold, cost.wood, cost.stone)) return state;
   enqueue(next, "ship", territoryId, 1);
@@ -770,12 +1106,41 @@ export function advanceJobs(state: GameState): GameState {
   for (const job of done) {
     const t = next.territories[job.territoryId];
     if (!t || t.owner !== job.player) continue;
-    if (job.kind === "port") t.port = true;
-    if (job.kind === "mine") t.mine = true;
-    if (job.kind === "castle") t.castle = true;
-    if (job.kind === "market") t.market = true;
+    if (job.kind === "port") {
+      t.portRank = Math.min(WORKS_CAP, (t.portRank ?? 0) + 1);
+      t.port = true;
+    }
+    if (job.kind === "mine") {
+      t.mineRank = Math.min(WORKS_CAP, (t.mineRank ?? 0) + 1);
+      t.mine = true;
+    }
+    if (job.kind === "castle") {
+      t.castleRank = Math.min(WORKS_CAP, (t.castleRank ?? 0) + 1);
+      t.castle = true;
+    }
+    if (job.kind === "market") {
+      t.marketRank = Math.min(WORKS_CAP, (t.marketRank ?? 0) + 1);
+      t.market = true;
+    }
+    if (job.kind === "farm") {
+      t.farmRank = Math.min(WORKS_CAP, (t.farmRank ?? 0) + 1);
+      t.farm = true;
+    }
+    if (job.kind === "road") t.road = true;
     if (job.kind === "ship") t.ships += 1;
-    log(next, `${TERRITORY_BY_ID[job.territoryId]!.name}: ${job.kind === "castle" ? "walls" : job.kind} complete.`);
+    const label = job.kind === "castle" ? "walls" : job.kind;
+    const rank =
+      job.kind === "port" ||
+      job.kind === "mine" ||
+      job.kind === "castle" ||
+      job.kind === "market" ||
+      job.kind === "farm"
+        ? worksRank(t, job.kind)
+        : 0;
+    log(
+      next,
+      `${TERRITORY_BY_ID[job.territoryId]!.name}: ${label}${rank > 1 ? ` ${"I".repeat(rank)}` : ""} complete.`,
+    );
   }
   return next;
 }
@@ -810,7 +1175,10 @@ export function playCard(state: GameState, card: CardId, territoryId?: string): 
     }
   } else if (card === "wall" && territoryId) {
     const t = terr(next, territoryId);
-    if (t.owner === p.id) t.castle = true;
+    if (t.owner === p.id) {
+      t.castle = true;
+      t.castleRank = Math.max(t.castleRank ?? 0, 1);
+    }
     log(next, `${empireOf(p.empire).name} throws up a wall.`);
   }
   return next;
@@ -851,28 +1219,38 @@ export function checkVictory(state: GameState): GameState {
     if (continentsHeld(next, p.id).length >= WIN_CONTINENTS) {
       next.phase = "gameover";
       next.winner = p.id;
-      log(next, `${empireOf(p.empire).name} holds two continents.`);
+      log(next, `${empireOf(p.empire).name} holds five continents.`);
       return next;
     }
   }
   if (next.clock.turn >= TURN_LIMIT) {
-    const ranked = rankPlayers(next).filter((r) => r.continents >= WIN_CONTINENTS);
+    const ranked = rankPlayers(next);
     next.phase = "gameover";
     if (!ranked.length) {
       next.winner = null;
-      log(next, "The age closes. No court held two continents.");
+      log(next, "The age closes. No court remains.");
       return next;
     }
     const best = ranked[0]!;
-    const tie = ranked[1] && ranked[1].continents === best.continents;
-    next.winner = best.id;
+    const second = ranked[1];
+    const tie = Boolean(
+      second && second.continents === best.continents && second.lands === best.lands,
+    );
     if (tie) {
+      next.winner = null;
+      log(next, "The age closes in a dead heat.");
+      return next;
+    }
+    next.winner = best.id;
+    if (second && second.continents === best.continents) {
       log(
         next,
         `The age closes. ${empireOf(best.empire).name} holds the most provinces among the leading continents.`,
       );
-    } else {
+    } else if (best.continents > 0) {
       log(next, `The age closes. ${empireOf(best.empire).name} holds the most continents.`);
+    } else {
+      log(next, `The age closes. ${empireOf(best.empire).name} holds the most provinces.`);
     }
   }
   return next;
@@ -882,33 +1260,83 @@ function collectIncome(state: GameState, player: PlayerId) {
   const inc = incomeFor(state, player);
   const up = upkeepFor(state, player);
   const p = playerOf(state, player);
-  p.gold += inc.gold - up.gold;
+  p.gold += inc.gold;
+  p.silver += inc.silver - up.silver;
   p.wood += inc.wood;
   p.stone += inc.stone;
   p.metal += inc.metal;
-  if (p.gold < 0) {
+  p.food += inc.food;
+  const need = foodNeed(state, player);
+  p.food -= need;
+  tickPopulation(state, player, p.food);
+  if (p.food < 0) p.food = 0;
+  p.lastLands = ownedIds(state, player).length;
+  if (p.silver < 0) {
     for (const id of ownedIds(state, player)) {
       const t = terr(state, id);
-      while (p.gold < 0 && t.dragons > 0) {
+      while (p.silver < 0 && t.dragons > 0) {
         t.dragons -= 1;
-        p.gold += 2;
+        p.silver += 1;
       }
-      while (p.gold < 0 && (t.beasts ?? 0) > 0) {
+      while (p.silver < 0 && (t.beasts ?? 0) > 0) {
         t.beasts -= 1;
-        p.gold += 1;
+        p.silver += BEAST_WAGE;
       }
-      while (p.gold < 0 && t.knights > 0) {
+      while (p.silver < 0 && t.knights > 0) {
         t.knights -= 1;
-        p.gold += 1;
+        p.silver += 1;
       }
-      while (p.gold < 0 && t.ships > 0) {
-        t.ships -= 1;
-        p.gold += 1;
+      while (p.silver < 0 && t.levy > 0) {
+        t.levy -= 1;
+        p.silver += 1;
       }
     }
-    p.gold = Math.max(0, p.gold);
+    p.silver = Math.max(0, p.silver);
   }
   grantRealmRecruits(state, player);
+}
+
+function tickPopulation(state: GameState, player: PlayerId, foodAfter: number) {
+  const ids = ownedIds(state, player);
+  const p = playerOf(state, player);
+  const expanding = ids.length > (p.lastLands ?? ids.length);
+  if (foodAfter < 0) {
+    let hunger = -foodAfter;
+    const crowded = ids
+      .map((id) => terr(state, id))
+      .filter((t) => (t.population ?? 0) > 1)
+      .sort((a, b) => (b.population ?? 0) - (a.population ?? 0));
+    for (const t of crowded) {
+      if (hunger <= 0) break;
+      const drop = Math.min(hunger, (t.population ?? 1) - 1);
+      t.population -= drop;
+      hunger -= drop;
+    }
+    if (hunger > 0) log(state, `${empireOf(p.empire).name} starves.`);
+    else log(state, `${empireOf(p.empire).name} goes hungry.`);
+    return;
+  }
+  const surplus = foodAfter >= 2;
+  if (!expanding && !surplus) return;
+  const grown: string[] = [];
+  const cities = ids
+    .map((id) => terr(state, id))
+    .sort((a, b) => (a.population ?? 0) - (b.population ?? 0));
+  for (const t of cities) {
+    const developed =
+      expanding ||
+      t.farm ||
+      t.market ||
+      t.road ||
+      t.port ||
+      Object.values(CAPITOL).includes(t.id);
+    if (!developed) continue;
+    if ((t.population ?? 0) >= cityPopCap(t)) continue;
+    t.population = (t.population ?? 0) + 1;
+    grown.push(TERRITORY_BY_ID[t.id]!.name);
+    if (!expanding) break;
+  }
+  if (grown.length) log(state, `${empireOf(p.empire).name} grows in ${grown.slice(0, 3).join(", ")}.`);
 }
 
 function grantRealmRecruits(state: GameState, player: PlayerId) {
@@ -930,17 +1358,25 @@ function grantRealmRecruits(state: GameState, player: PlayerId) {
   }
 }
 
+function tribeGrowUntil(difficulty: Difficulty): number {
+  if (difficulty === "easy") return 30;
+  if (difficulty === "hard") return 80;
+  return 50;
+}
+
 function tickTribes(state: GameState) {
   const rng = mulberry32((state.seed + state.clock.turn * 7919) >>> 0);
+  const band = tribeBand(state.difficulty);
   for (const t of Object.values(state.territories)) {
     if (t.owner === "barbarian" && t.pressure > 0) t.pressure -= 1;
   }
-  for (const t of Object.values(state.territories)) {
-    if (t.owner !== "barbarian") continue;
-    const cap = 6;
-    const chance = t.pressure > 0 ? 0.18 : 0.42;
-    if (t.levy < cap && rng() < chance) t.levy += 1;
-    if (t.knights === 0 && t.levy >= 4 && rng() < 0.08) t.knights = 1;
+  if (state.clock.turn < tribeGrowUntil(state.difficulty)) {
+    for (const t of Object.values(state.territories)) {
+      if (t.owner !== "barbarian") continue;
+      const chance = t.pressure > 0 ? band.pressGrow : band.grow;
+      if (t.levy < band.cap && rng() < chance) t.levy += 1;
+      if (t.knights === 0 && t.levy >= band.knightLevy && rng() < band.knight) t.knights = 1;
+    }
   }
   const imperial = Object.values(state.territories).filter((t) => t.owner !== "barbarian");
   for (const target of shuffle(rng, imperial)) {
@@ -965,6 +1401,7 @@ function tickTribes(state: GameState) {
       target.beasts = 0;
       target.ships = 0;
       target.castle = false;
+      target.castleRank = 0;
       target.pressure = 0;
       if (prev !== "barbarian" && ownedIds(state, prev).length === 0) {
         playerOf(state, prev).alive = false;
@@ -1051,7 +1488,10 @@ export function watchReport(before: GameState, after: GameState): string[] {
   }
   if (after.players[0]?.alive) {
     const inc = incomeFor(after, 0);
-    lines.push(`Tribute this watch: ${inc.gold} gold, ${inc.metal} metal, ${inc.wood} timber, ${inc.stone} stone.`);
+    const up = upkeepFor(after, 0);
+    lines.push(
+      `Tribute this watch: ${inc.gold} gold, ${inc.silver} silver, ${inc.food} food, ${inc.metal} metal, ${inc.wood} timber, ${inc.stone} stone. Wages: ${up.silver} silver. Grain for ${foodNeed(after, 0)} citizens.`,
+    );
   }
   return lines.slice(0, 14);
 }

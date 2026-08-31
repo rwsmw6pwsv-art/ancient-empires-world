@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/play/thule/normal/capital",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Ancient Empires",
+      "hasCanvas": false,
+      "bodyTextLen": 2569,
+      "bodyTextHash": "5319ea4e6d603b20ea7a6433d8bc8a73753dd852eb75d18299116dd2e0ac4dc7",
+      "bodyTextPrefix": "Ancient Empires Your watch — Nord · Medium · Turn 1/100 · 0 cont",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/map-nord.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Ancient Empires",
+      "hasCanvas": false,
+      "bodyTextLen": 2547,
+      "bodyTextHash": "6d519167d5550e404bdc466a18cbbf512a90996edfc524aa80a6be759c1dae94",
+      "bodyTextPrefix": "Ancient Empires Your watch — Nord · Medium · Turn 1/100 · 0 cont",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/map-nord-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/map-nord.json"
+}

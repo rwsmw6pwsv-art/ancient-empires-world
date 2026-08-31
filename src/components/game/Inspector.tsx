@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { empireOf } from "@/lib/game/empires";
-import { constructionBusy, defenseStrength, forceStrength, hasJob, hostAttack, hostDefense, legalMarchTargets, oddsLabel, standing, worksCost } from "@/lib/game/engine";
+import { constructionBusy, defenseStrength, forceStrength, hasJob, hostAttack, hostDefense, legalMarchTargets, oddsLabel, shipsCap, standing, worksCost, worksRank } from "@/lib/game/engine";
 import type { EmpireId, GameState, JobKind, UnitKind } from "@/lib/game/types";
-import { CAPITOL, CONTINENT_NAMES, UNIT_COST } from "@/lib/game/types";
-import { TERRITORY_BY_ID } from "@/lib/game/world";
+import { CAPITOL, CONTINENT_NAMES, UNIT_COST, WORKS_CAP } from "@/lib/game/types";
+import { TERRITORY_BY_ID, seaNeighbors } from "@/lib/game/world";
 import { landscapeOf, beastOf, FAUNA_LABEL, RESOURCE_LABEL, TERRAIN_LABEL, WONDER_LABEL } from "@/lib/game/landscape";
 import { Button } from "@/components/ui/button";
 import { sfx } from "@/lib/sfx";
@@ -13,17 +13,19 @@ import { Hint } from "./Hint";
 export type ActionKind = "train" | "march" | "build";
 
 const TRAIN_HINT = {
-  levy: "Raise men here. Attack 1, defence 1. Costs gold and metal.",
+  levy: "Raise men here. Attack 1, defence 1. Costs gold and metal. One silver wage per two men, at least one while they stand.",
   knight: "Raise a knight here. Attack 2, defence 2. Costs gold and metal.",
   dragon: "Raise a dragon here. Attack 25, defence 25. Costs 25 gold. One dragon per province.",
 } as const;
 
 const BUILD_HINT: Record<string, string> = {
-  port: "A harbour on the coast. Lets you lay ships and pays extra tribute.",
-  castle: "Raise walls around this city. Adds 12 to defence, on top of the city's 5.",
-  market: "A trade post. Extra gold, more if this land is rich.",
-  mine: "Inland goldworks. Pays tribute each watch.",
-  ship: "A keel at the port. Spend a ship to cross a sea lane.",
+  port: "A harbour on the coast. Pays trade, and can be improved twice with gold for more trade.",
+  castle: "Raise walls around this city (+12 defence). Improve them with gold into a keep, then a citadel.",
+  market: "A trade post. Improve with gold up to rank III for more trade.",
+  mine: "Inland goldworks. Improve with gold to raise tribute and silver from silver veins.",
+  ship: "Lay another keel. Improved harbours hold more (2 / 4 / 6). Each ship sails with a column, pays two trade gold, and lets this harbour strike the sea again the same watch.",
+  road: "Pave this land. A trade route forms with every neighbouring paved city you hold, and pays gold each watch.",
+  farm: "Sow fields or fisheries. Pays food each watch. Improve with gold. Citizens starve without enough grain.",
 };
 
 const CARD_HINT: Record<string, string> = {
@@ -60,14 +62,16 @@ export function ProvinceBanner({ state, selected }: { state: GameState; selected
       </p>
       <p className="mt-1 text-xs tabular-nums text-fg">
         Attack {hostAttack(state, t)} · Defence {hostDefense(state, t)} · Men {t.levy} · Knights {t.knights} ·{" "}
-        {beastName} {t.beasts ?? 0} · Dragons {t.dragons} · Host {standing(t)}
+        {beastName} {t.beasts ?? 0} · Dragons {t.dragons} · Host {standing(t)} · Citizens {t.population ?? 0}
       </p>
       <p className="text-xs text-muted">
         {TERRAIN_LABEL[land.terrain]}
         {t.owner !== "barbarian" ? " · City" : ""}
-        {t.castle ? " · Walls" : ""}
-        {t.market ? " · Market" : ""}
-        {t.port ? ` · Port · ${t.ships} ships` : t.mine ? " · Mine" : ""}
+        {t.castle ? ` · Walls${worksRank(t, "castle") > 1 ? ` ${"I".repeat(worksRank(t, "castle"))}` : ""}` : ""}
+        {t.market ? ` · Market${worksRank(t, "market") > 1 ? ` ${"I".repeat(worksRank(t, "market"))}` : ""}` : ""}
+        {t.port ? ` · Port${worksRank(t, "port") > 1 ? ` ${"I".repeat(worksRank(t, "port"))}` : ""} · ${t.ships} ships` : t.mine ? ` · Mine${worksRank(t, "mine") > 1 ? ` ${"I".repeat(worksRank(t, "mine"))}` : ""}` : ""}
+        {t.road ? " · Road" : ""}
+        {t.farm ? ` · Farm${worksRank(t, "farm") > 1 ? ` ${"I".repeat(worksRank(t, "farm"))}` : ""}` : ""}
       </p>
       {land.wonder ? <p className="text-xs text-fg">{WONDER_LABEL[land.wonder]}</p> : null}
       {land.fauna ? <p className="text-xs text-muted">{FAUNA_LABEL[land.fauna]} roam here</p> : null}
@@ -80,6 +84,7 @@ export function ProvinceBanner({ state, selected }: { state: GameState; selected
               : "Stout camp — will raid neighbouring empires if left."}
         </p>
       ) : null}
+      {isCap ? <p className="text-xs text-muted">Capital mint — pays silver each watch</p> : null}
       {land.resource ? (
         <p className="text-xs text-muted">
           rich in {RESOURCE_LABEL[land.resource]}
@@ -163,7 +168,7 @@ export function ActionSheet({
           {isCap ? (
             <div className="flex items-center gap-1">
               <Hint
-                text={`Raise ${beastOf(human.empire).name} at the capital only. Attack ${beastOf(human.empire).atk}, defence ${beastOf(human.empire).def}, ${beastOf(human.empire).cost} gold.`}
+                text={`Raise ${beastOf(human.empire).name} at the capital only. Attack ${beastOf(human.empire).atk}, defence ${beastOf(human.empire).def}, ${beastOf(human.empire).cost} gold, 3 silver wages. Hunters — send them, do not park them.`}
               />
               <Button size="sm" variant="secondary" className="h-9 flex-1 justify-between px-2" onClick={() => onTrain("beast")}>
                 <span>{beastOf(human.empire).name}</span>
@@ -189,12 +194,27 @@ export function ActionSheet({
   }
 
   if (action === "build") {
+    const rankOf = (kind: JobKind) => worksRank(t, kind);
+    const labelOf = (kind: JobKind, base: string) => {
+      const r = rankOf(kind);
+      if (kind === "castle") {
+        if (r >= WORKS_CAP) return "Citadel";
+        if (r === 2) return "Citadel";
+        if (r === 1) return "Keep";
+        return "Walls";
+      }
+      if (r >= WORKS_CAP) return `${base} III`;
+      if (r > 0) return `Improve ${base}`;
+      return base;
+    };
     const jobs: { kind: JobKind; label: string; disabled: boolean }[] = [
-      { kind: "port", label: "Port", disabled: !meta.coastal || t.port || busy },
-      { kind: "castle", label: "Walls", disabled: t.castle || busy },
-      { kind: "market", label: "Market", disabled: t.market || busy },
-      { kind: "mine", label: "Mine", disabled: meta.coastal || t.mine || busy },
-      { kind: "ship", label: "Ship", disabled: !meta.coastal || !t.port || busy },
+      { kind: "port", label: labelOf("port", "Port"), disabled: !meta.coastal || rankOf("port") >= WORKS_CAP || busy },
+      { kind: "castle", label: labelOf("castle", "Walls"), disabled: rankOf("castle") >= WORKS_CAP || busy },
+      { kind: "market", label: labelOf("market", "Market"), disabled: rankOf("market") >= WORKS_CAP || busy },
+      { kind: "mine", label: labelOf("mine", "Mine"), disabled: meta.coastal || rankOf("mine") >= WORKS_CAP || busy },
+      { kind: "ship", label: t.ships > 0 ? "Keel" : "Ship", disabled: !meta.coastal || !t.port || busy || t.ships >= shipsCap(t) },
+      { kind: "road", label: "Road", disabled: t.road || busy },
+      { kind: "farm", label: labelOf("farm", "Farm"), disabled: rankOf("farm") >= WORKS_CAP || busy },
     ];
     return (
       <div className="panel action-sheet flex flex-col gap-1.5">
@@ -211,7 +231,7 @@ export function ActionSheet({
                 onClick={() => onBuild(j.kind)}
               >
                 <span>{j.label}</span>
-                <CostRow {...worksCost(human, j.kind)} />
+                <CostRow {...worksCost(human, j.kind, t)} />
               </Button>
             </div>
           ))}
@@ -338,7 +358,7 @@ export function OccupySheet({
   fromId: string;
   toId: string;
   onHold: () => void;
-  onRecall: (recall: { levy: number; knights: number; dragons: number; beasts: number }) => void;
+  onRecall: (recall: { levy: number; knights: number; dragons: number; beasts: number; ships?: number }) => void;
 }) {
   const to = state.territories[toId]!;
   const fromMeta = TERRITORY_BY_ID[fromId]!;
@@ -349,7 +369,10 @@ export function OccupySheet({
   const [knights, setKnights] = useState(to.knights);
   const [dragons, setDragons] = useState(to.dragons);
   const [beasts, setBeasts] = useState(to.beasts ?? 0);
+  const canSailHome = (to.ships ?? 0) > 0 && seaNeighbors(toId).includes(fromId);
+  const [sailHome, setSailHome] = useState(canSailHome);
   const beastName = beastOf(state.players[0]!.empire).name;
+  const sending = levy + knights + dragons + beasts;
   return (
     <div className="panel action-sheet space-y-1.5">
       <p className="text-[10px] tracking-[0.16em] text-muted uppercase">Occupy {toMeta.name}</p>
@@ -446,20 +469,37 @@ export function OccupySheet({
               {dragons}/{to.dragons}
             </span>
           </label>
+          {canSailHome ? (
+            <label className="flex items-center gap-2 text-xs text-fg">
+              <input
+                type="checkbox"
+                checked={sailHome && sending > 0}
+                disabled={sending < 1}
+                onChange={(e) => setSailHome(e.target.checked)}
+              />
+              Sail the keel home with them
+            </label>
+          ) : null}
         </div>
       )}
       <div className="flex items-center gap-1">
         <Hint
           text={
             mode === "hold"
-              ? "Leave the surviving host in the new city."
-              : "Send the numbers on the sliders back to the city they marched from."
+              ? "Leave the surviving host and the keel in the new city."
+              : canSailHome
+                ? "Send the numbers on the sliders back. Tick the box to sail the keel home with them, or leave it berthed here."
+                : "Send the numbers on the sliders back to the city they marched from."
           }
         />
         <Button
           size="sm"
           className="h-9 flex-1"
-          onClick={() => (mode === "hold" ? onHold() : onRecall({ levy, knights, dragons, beasts }))}
+          onClick={() =>
+            mode === "hold"
+              ? onHold()
+              : onRecall({ levy, knights, dragons, beasts, ships: sailHome && sending > 0 ? 1 : 0 })
+          }
         >
           {mode === "hold" ? "Hold the city" : "Send them home"}
         </Button>

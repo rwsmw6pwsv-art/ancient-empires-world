@@ -12,9 +12,11 @@ export function EndScreen({ state, onMenu }: { state: GameState; onMenu: () => v
         <p className="font-display text-xs tracking-[0.22em] text-muted uppercase">{youWin ? "Triumph" : "Fall"}</p>
         <h2 className="mt-3 font-display text-3xl">{house ? `${house.name} prevails` : "The age closes"}</h2>
         <p className="mt-3 text-sm text-muted">
-          {youWin
-            ? "Six continents ends the age at once. Otherwise continents count first, then provinces."
-            : "Another court holds more continents — or more provinces if the continents were tied."}
+          {house
+            ? youWin
+              ? "Five continents ends the age at once. Otherwise continents count first, then provinces."
+              : "Another court holds more continents — or more provinces if the continents were tied."
+            : "The chronicles could not split the age."}
         </p>
         <p className="mt-2 text-xs text-muted">{state.log.at(-1)}</p>
         <Button className="mt-6 w-full" onClick={onMenu}>

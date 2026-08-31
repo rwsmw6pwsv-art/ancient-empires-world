@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/play/aztec/normal/capital",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Ancient Empires",
+      "hasCanvas": false,
+      "bodyTextLen": 2572,
+      "bodyTextHash": "e6d7f8d961bcea1f9d8006c2add6fcd198a79e6f91805039b9dafee4aff077ef",
+      "bodyTextPrefix": "Ancient Empires Your watch — Aztec · Medium · Turn 1/100 · 0 con",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/map-aztec.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Ancient Empires",
+      "hasCanvas": false,
+      "bodyTextLen": 2550,
+      "bodyTextHash": "a2d25bf1e7fc19ba72957266c254516121a789bfa266672bc1fea4f7e7e8a059",
+      "bodyTextPrefix": "Ancient Empires Your watch — Aztec · Medium · Turn 1/100 · 0 con",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/map-aztec-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/map-aztec.json"
+}

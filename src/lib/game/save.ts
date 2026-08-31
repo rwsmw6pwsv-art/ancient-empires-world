@@ -10,6 +10,21 @@ function migrate(raw: GameState): GameState {
   if (s.territories) {
     for (const t of Object.values(s.territories)) {
       if (t.market === undefined) t.market = false;
+      if (t.road === undefined) t.road = false;
+      t.marketRank = t.marketRank ?? (t.market ? 1 : 0);
+      t.portRank = t.portRank ?? (t.port ? 1 : 0);
+      t.mineRank = t.mineRank ?? (t.mine ? 1 : 0);
+      t.castleRank = t.castleRank ?? (t.castle ? 1 : 0);
+      if (t.farm === undefined) t.farm = false;
+      t.farmRank = t.farmRank ?? (t.farm ? 1 : 0);
+      if (t.population === undefined) t.population = t.owner === "barbarian" ? 1 : 4;
+    }
+  }
+  if (s.players) {
+    for (const p of s.players) {
+      if (p.silver === undefined) p.silver = 12;
+      if (p.food === undefined) p.food = 8;
+      if (p.lastLands === undefined) p.lastLands = 1;
     }
   }
   s.version = SAVE_VERSION;

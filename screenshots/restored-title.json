@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Ancient Empires",
+      "hasCanvas": true,
+      "bodyTextLen": 2753,
+      "bodyTextHash": "e59fca1c7070c676de6c36185233eeefd3444a06c816ddc5e81ea0e4856ed220",
+      "bodyTextPrefix": "Ancient Empires The world is still young. Twelve empires stand a",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/restored-title.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Ancient Empires",
+      "hasCanvas": true,
+      "bodyTextLen": 2753,
+      "bodyTextHash": "e59fca1c7070c676de6c36185233eeefd3444a06c816ddc5e81ea0e4856ed220",
+      "bodyTextPrefix": "Ancient Empires The world is still young. Twelve empires stand a",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/restored-title-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/restored-title.json"
+}

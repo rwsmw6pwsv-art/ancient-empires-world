@@ -1,5 +1,5 @@
 import { empireOf } from "@/lib/game/empires";
-import { continentsHeld, incomeFor, ownedIds, rankPlayers } from "@/lib/game/engine";
+import { continentsHeld, foodNeed, incomeFor, ownedIds, rankPlayers, realmPopulation, upkeepFor } from "@/lib/game/engine";
 import type { GameState } from "@/lib/game/types";
 import { TURN_LIMIT } from "@/lib/game/types";
 import { DIFFICULTIES } from "@/lib/game/campaign";
@@ -11,7 +11,10 @@ export function Hud({ state, onEnd, onQuit }: { state: GameState; onEnd: () => v
   const human = state.players[0]!;
   const house = empireOf(human.empire);
   const inc = incomeFor(state, 0);
+  const up = upkeepFor(state, 0);
   const lands = ownedIds(state, 0).length;
+  const pop = realmPopulation(state, 0);
+  const grain = foodNeed(state, 0);
   const cont = continentsHeld(state, 0).length;
   const lead = rankPlayers(state)[0];
   const leading = lead && lead.id === 0;
@@ -28,7 +31,7 @@ export function Hud({ state, onEnd, onQuit }: { state: GameState; onEnd: () => v
             {myTurn ? `Your watch — ${house.name}` : `${empireOf(whose.empire).name}’s watch`}
             <span className="text-muted">
               {" "}
-              · {age} · Turn {state.clock.turn}/{TURN_LIMIT} · {cont} continents · {lands} lands
+              · {age} · Turn {state.clock.turn}/{TURN_LIMIT} · {cont} continents · {lands} lands · {pop} citizens
               {leading ? " · leading" : ""}
             </span>
           </p>
@@ -50,11 +53,15 @@ export function Hud({ state, onEnd, onQuit }: { state: GameState; onEnd: () => v
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <ResourceMark kind="gold" amount={human.gold} />
+        <ResourceMark kind="silver" amount={human.silver} />
+        <ResourceMark kind="food" amount={human.food} />
         <ResourceMark kind="metal" amount={human.metal} />
         <ResourceMark kind="wood" amount={human.wood} />
         <ResourceMark kind="stone" amount={human.stone} />
         <span className="hidden items-center gap-1 text-xs text-muted md:inline-flex">
-          +<ResourceMark kind="gold" amount={inc.gold} /> next tribute
+          +<ResourceMark kind="gold" amount={inc.gold} />
+          +<ResourceMark kind="silver" amount={Math.max(0, inc.silver - up.silver)} />
+          +<ResourceMark kind="food" amount={Math.max(0, inc.food - grain)} /> next tribute
         </span>
       </div>
     </header>

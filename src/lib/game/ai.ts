@@ -4,6 +4,8 @@ import {
   buildMine,
   buildPort,
   buildShip,
+  buildRoad,
+  buildFarm,
   constructionBusy,
   endTurn,
   forceStrength,
@@ -15,10 +17,15 @@ import {
   resolveAttack,
   standing,
   trainUnit,
+  upkeepFor,
+  worksCost,
+  worksRank,
+  foodNeed,
+  shipsCap,
 } from "./engine";
 import type { AiAction, Difficulty, GameState, JobKind, PlayerId, TerritoryState } from "./types";
-import { UNIT_COST } from "./types";
-import { TERRITORY_BY_ID, landNeighbors } from "./world";
+import { UNIT_COST, WORKS_CAP, BEAST_WAGE } from "./types";
+import { TERRITORY_BY_ID, continentTerritories, landNeighbors } from "./world";
 import { empireOf } from "./empires";
 import { beastOf } from "./landscape";
 
@@ -29,51 +36,83 @@ function owned(state: GameState, player: PlayerId): TerritoryState[] {
 function profile(diff: Difficulty) {
   if (diff === "easy") {
     return {
-      marchMin: 4,
-      keepExtra: 2,
-      capFloor: 5,
-      landFloor: 2,
-      capDanger: 5,
+      marchMin: 0,
+      keepExtra: 0,
+      capFloor: 2,
+      landFloor: 1,
+      capDanger: 2,
+      atkSlack: 0,
       cities: true,
       knights: true,
       dragons: true,
-      empires: false,
+      empires: true,
+      bankToSpend: 0,
+      spendFloor: 0,
+      beastBank: 4,
+      saveBeastGap: 0,
+      saveDragonFrom: 22,
+      raid: false,
+      huntLeader: false,
+      tribeUntil: 4,
     };
   }
   if (diff === "hard") {
     return {
       marchMin: -1,
-      keepExtra: -2,
-      capFloor: 2,
+      keepExtra: 0,
+      capFloor: 3,
       landFloor: 1,
       capDanger: 3,
+      atkSlack: 1,
       cities: true,
       knights: true,
       dragons: true,
       empires: true,
+      bankToSpend: 0,
+      spendFloor: 0,
+      beastBank: 0,
+      saveBeastGap: 2,
+      saveDragonFrom: 18,
+      raid: true,
+      huntLeader: true,
+      tribeUntil: 0,
     };
   }
   return {
-    marchMin: 2,
-    keepExtra: 1,
-    capFloor: 4,
-    landFloor: 2,
-    capDanger: 4,
+    marchMin: 0,
+    keepExtra: 0,
+    capFloor: 2,
+    landFloor: 1,
+    capDanger: 2,
+    atkSlack: 0,
     cities: true,
     knights: true,
     dragons: true,
     empires: true,
+    bankToSpend: 0,
+    spendFloor: 0,
+    beastBank: 0,
+    saveBeastGap: 2,
+    saveDragonFrom: 20,
+    raid: false,
+    huntLeader: true,
+    tribeUntil: 4,
   };
 }
 
+type Spec = ReturnType<typeof profile>;
+
 function neighborThreat(state: GameState, t: TerritoryState, player: PlayerId): number {
-  let threat = 0;
+  let imperial = 0;
+  let tribal = 0;
   for (const id of landNeighbors(t.id)) {
     const d = state.territories[id];
     if (!d || d.owner === player) continue;
-    threat = Math.max(threat, hostDefense(state, d));
+    const def = hostDefense(state, d);
+    if (d.owner === "barbarian") tribal = Math.max(tribal, Math.min(3, Math.floor(def / 2) + 1));
+    else imperial = Math.max(imperial, def);
   }
-  return threat;
+  return Math.max(imperial, tribal);
 }
 
 function garrisonKeep(
@@ -81,7 +120,7 @@ function garrisonKeep(
   t: TerritoryState,
   player: PlayerId,
   isCapitol: boolean,
-  spec: ReturnType<typeof profile>,
+  spec: Spec,
 ): number {
   const host = standing(t);
   const floor = isCapitol ? spec.capFloor : spec.landFloor;
@@ -90,11 +129,11 @@ function garrisonKeep(
 }
 
 function splitSend(t: TerritoryState, keep: number): { levy: number; knights: number; dragons: number; beasts: number } {
-  let remain = Math.max(0, keep);
+  const beasts = t.beasts ?? 0;
+  const holdable = t.levy + t.knights + t.dragons;
+  let remain = Math.min(Math.max(0, keep), holdable);
   const keepD = Math.min(t.dragons, remain);
   remain -= keepD;
-  const keepB = Math.min(t.beasts ?? 0, remain);
-  remain -= keepB;
   const keepK = Math.min(t.knights, remain);
   remain -= keepK;
   const keepL = Math.min(t.levy, remain);
@@ -102,7 +141,7 @@ function splitSend(t: TerritoryState, keep: number): { levy: number; knights: nu
     levy: t.levy - keepL,
     knights: t.knights - keepK,
     dragons: t.dragons - keepD,
-    beasts: (t.beasts ?? 0) - keepB,
+    beasts,
   };
 }
 
@@ -121,8 +160,38 @@ function landWalk(state: GameState, t: TerritoryState, player: PlayerId): string
   });
 }
 
-function weakestPrey(state: GameState, player: PlayerId, capitol: string, spec: ReturnType<typeof profile>) {
+function rivalSize(state: GameState, owner: TerritoryState["owner"]): number {
+  if (owner === "barbarian") return 0;
+  return owned(state, owner).length;
+}
+
+function leadingRival(state: GameState, player: PlayerId): PlayerId | null {
+  let best: { id: PlayerId; continents: number; lands: number } | null = null;
+  for (const p of state.players) {
+    if (p.id === player || !p.alive) continue;
+    const lands = owned(state, p.id).length;
+    if (!lands) continue;
+    let continents = 0;
+    const share: Record<string, number> = {};
+    for (const t of owned(state, p.id)) {
+      const c = TERRITORY_BY_ID[t.id]!.continent;
+      share[c] = (share[c] ?? 0) + 1;
+    }
+    for (const c of Object.keys(share)) {
+      if (share[c] === continentTerritories(c).length) continents += 1;
+    }
+    if (!best || continents > best.continents || (continents === best.continents && lands > best.lands)) {
+      best = { id: p.id, continents, lands };
+    }
+  }
+  return best?.id ?? null;
+}
+
+function weakestPrey(state: GameState, player: PlayerId, capitol: string, spec: Spec) {
   let best: { from: string; to: string; score: number; send: ReturnType<typeof splitSend> } | null = null;
+  const homes = new Set(empireOf(state.players[player]!.empire).homes);
+  const capCont = TERRITORY_BY_ID[capitol]!.continent;
+  const leader = spec.huntLeader ? leadingRival(state, player) : null;
   for (const t of owned(state, player)) {
     const keep = garrisonKeep(state, t, player, t.id === capitol, spec);
     const send = splitSend(t, keep);
@@ -130,20 +199,63 @@ function weakestPrey(state: GameState, player: PlayerId, capitol: string, spec: 
     for (const nid of legalMarchTargets(state, t.id)) {
       const dest = state.territories[nid]!;
       if (dest.owner === player) continue;
-      if (!spec.empires && dest.owner !== "barbarian") continue;
+      const tribe = dest.owner === "barbarian";
+      const tribeOnly = spec.tribeUntil > 0 && owned(state, player).length < spec.tribeUntil;
+      if (tribeOnly && !tribe) continue;
+      if (!spec.empires && !tribe) continue;
       const atk = forceStrength(send, beastOf(state.players[player]!.empire).atk);
       const def = hostDefense(state, dest);
+      if (atk + spec.atkSlack < def) continue;
       let score = atk - def;
-      if (dest.owner === "barbarian") score += 3;
-      if (landNeighbors(capitol).includes(nid)) score += 3;
+      if (send.beasts > 0) score += 6;
+      if (tribe) score += 2;
+      if (landNeighbors(capitol).includes(nid)) score += 2;
+      if (homes.has(nid)) score += 3;
       const destCont = TERRITORY_BY_ID[nid]!.continent;
+      if (destCont === capCont) score += 2;
       const heldOn = owned(state, player).filter((x) => TERRITORY_BY_ID[x.id]!.continent === destCont).length;
-      score += heldOn * 3;
-      const need = dest.owner === "barbarian" ? spec.marchMin : Math.max(0, spec.marchMin);
-      if (score >= need && (!best || score > best.score)) best = { from: t.id, to: nid, score, send };
+      score += heldOn;
+      const landsOn = continentTerritories(destCont).length;
+      if (heldOn + 1 >= landsOn) score += 8;
+      if (!tribe && dest.owner !== "barbarian") {
+        const size = rivalSize(state, dest.owner);
+        if (size <= 2) score += 3;
+        if (leader != null && dest.owner === leader) score += 4;
+        if (nid === empireOf(state.players[dest.owner]!.empire).capitol) score += 2;
+      }
+      if (score >= spec.marchMin && (!best || score > best.score)) best = { from: t.id, to: nid, score, send };
     }
   }
   return best;
+}
+
+function savingFor(
+  gold: number,
+  beastCost: number,
+  spec: Spec,
+  canBeastNow: boolean,
+  canDragonNow: boolean,
+): "beast" | "dragon" | null {
+  if (canDragonNow || canBeastNow) return null;
+  if (spec.dragons && gold >= spec.saveDragonFrom && gold < UNIT_COST.dragon.gold) return "dragon";
+  if (spec.saveBeastGap > 0 && gold >= beastCost - spec.saveBeastGap && gold < beastCost) return "beast";
+  return null;
+}
+
+function raidTarget(state: GameState, player: PlayerId): string | null {
+  let best: { id: string; score: number } | null = null;
+  for (const t of owned(state, player)) {
+    for (const id of legalMarchTargets(state, t.id)) {
+      const dest = state.territories[id]!;
+      if (dest.owner === player) continue;
+      const host = standing(dest);
+      if (host < 1 || host > 8) continue;
+      let score = 6 - host;
+      if (dest.owner !== "barbarian") score += 3;
+      if (!best || score > best.score) best = { id, score };
+    }
+  }
+  return best?.id ?? null;
 }
 
 export function nextAiAction(state: GameState): AiAction {
@@ -157,124 +269,148 @@ export function nextAiAction(state: GameState): AiAction {
   const capId = def.capitol;
   const cap = state.territories[capId];
   const holdCap = cap && cap.owner === player ? cap : null;
+  const beast = beastOf(p.empire);
+  const realm = lands.length;
+  const nest = lands.find((t) => t.dragons < 1);
+  const readyForDragon = Boolean(spec.dragons && nest && (realm >= 3 || ((nest?.knights ?? 0) >= 1 && standing(nest!) >= 4)));
+  const nearDragon = Boolean(readyForDragon && p.gold >= spec.saveDragonFrom && p.gold < UNIT_COST.dragon.gold);
+  const canBeastNow =
+    Boolean(holdCap) &&
+    !nearDragon &&
+    p.gold >= beast.cost + spec.beastBank &&
+    standing(holdCap!) >= 2 &&
+    realm >= (diff === "easy" ? 3 : 1);
+  const canDragonNow = Boolean(spec.dragons && nest && p.gold >= UNIT_COST.dragon.gold);
+  const saving = savingFor(p.gold, beast.cost, spec, canBeastNow, canDragonNow) ?? (nearDragon ? "dragon" : null);
+  const wagesOk = (extra = 0) => p.silver + incomeFor(state, player).silver >= upkeepFor(state, player).silver + extra;
+  const hungry = incomeFor(state, player).food + p.food < foodNeed(state, player);
+  const openLand = lands.some((t) => landWalk(state, t, player).length > 0);
+  const canSail = lands.some((t) => t.port && t.ships > 0 && legalMarchTargets(state, t.id).some((id) => state.territories[id]!.owner !== player));
+  const isolated = !openLand;
 
-  if (holdCap) {
-    const danger = threatened(state, holdCap, player) || standing(holdCap) < spec.capDanger;
-    if (danger) {
-      if (p.cards.includes("wall") && !holdCap.castle) {
-        return { type: "card", card: "wall", territoryId: capId };
-      }
-      if (p.cards.includes("levy") && standing(holdCap) < 6) {
-        return { type: "card", card: "levy", territoryId: capId };
-      }
-      if (p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal) {
-        return { type: "train", territoryId: capId, kind: "levy" };
-      }
-      for (const t of lands) {
-        if (t.id === capId) continue;
-        if (!legalMarchTargets(state, t.id).includes(capId)) continue;
-        const send = splitSend(t, garrisonKeep(state, t, player, false, spec));
-        if (sendCount(send) < 1) continue;
-        return { type: "march", from: t.id, to: capId, ...send };
-      }
+  if (holdCap && threatened(state, holdCap, player)) {
+    if (p.cards.includes("wall") && !holdCap.castle) {
+      return { type: "card", card: "wall", territoryId: capId };
     }
-  }
-
-  const stack = holdCap ?? lands.reduce((a, b) => (standing(a) >= standing(b) ? a : b));
-  let trainAt = stack;
-  for (const t of lands) {
-    const walk = landWalk(state, t, player);
-    const sea = t.port && t.ships > 0;
-    if (!walk.length && !sea) continue;
-    const foes = walk.length
-      ? walk
-      : legalMarchTargets(state, t.id).filter((id) => state.territories[id]!.owner !== player);
-    if (!foes.length) continue;
-    if (standing(t) < hostDefense(state, state.territories[foes[0]!]!)) trainAt = t;
-  }
-
-  for (const t of lands) {
-    const meta = TERRITORY_BY_ID[t.id]!;
-    if (constructionBusy(state, t.id)) continue;
-    const portGold = def.portGoldCost ?? 5;
-    if (meta.coastal && !t.port && p.gold >= portGold && p.wood >= 3) {
-      return { type: "build", territoryId: t.id, kind: "port" };
+    if (p.cards.includes("levy") && standing(holdCap) < 6) {
+      return { type: "card", card: "levy", territoryId: capId };
     }
-  }
-  for (const t of lands) {
-    if (constructionBusy(state, t.id)) continue;
-    if (t.port && t.ships < 1 && landWalk(state, t, player).length === 0 && p.gold >= 3 && p.wood >= (def.shipWoodCost ?? 5)) {
-      return { type: "build", territoryId: t.id, kind: "ship" };
+    if (p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1)) {
+      return { type: "train", territoryId: capId, kind: "levy" };
     }
-  }
-  for (const t of lands) {
-    const meta = TERRITORY_BY_ID[t.id]!;
-    if (constructionBusy(state, t.id)) continue;
-    const mineGold = def.mineGoldCost ?? 4;
-    const mineStone = def.mineStoneCost ?? 3;
-    const castleGold = def.castleCost ?? 6;
-    if (!meta.coastal && !t.mine && p.gold >= mineGold && p.stone >= mineStone) {
-      return { type: "build", territoryId: t.id, kind: "mine" };
-    }
-    if (t.port && t.ships < 1 && p.gold >= 3 && p.wood >= (def.shipWoodCost ?? 5)) {
-      return { type: "build", territoryId: t.id, kind: "ship" };
-    }
-    if (!t.market && p.gold >= 4 && p.wood >= 2) {
-      return { type: "build", territoryId: t.id, kind: "market" };
-    }
-    if (!t.castle && standing(t) >= 4 && p.gold >= castleGold && p.stone >= 4 && spec.cities) {
-      return { type: "build", territoryId: t.id, kind: "castle" };
-    }
-  }
-
-  const inc = incomeFor(state, player);
-  if (holdCap && p.gold >= beastOf(p.empire).cost && standing(holdCap) >= 2) {
-    return { type: "train", territoryId: holdCap.id, kind: "beast" };
-  }
-  if (spec.knights && p.gold >= UNIT_COST.knight.gold && p.metal >= UNIT_COST.knight.metal && stack.levy >= (diff === "hard" ? 2 : 3)) {
-    return { type: "train", territoryId: stack.id, kind: "knight" };
-  }
-  if (spec.dragons && p.gold >= UNIT_COST.dragon.gold) {
-    const nest = lands.find((t) => t.dragons < 1);
-    if (nest) {
-      if (diff === "hard" && (inc.gold >= 4 || nest.knights >= 1 || standing(nest) >= 4)) {
-        return { type: "train", territoryId: nest.id, kind: "dragon" };
-      }
-      if (diff !== "hard" && nest.knights >= 1) {
-        return { type: "train", territoryId: nest.id, kind: "dragon" };
-      }
-    }
-  }
-
-  if (p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal) {
-    return { type: "train", territoryId: trainAt.id, kind: "levy" };
-  }
-
-  if (holdCap && p.cards.includes("levy")) {
-    return { type: "card", card: "levy", territoryId: capId };
-  }
-  if (holdCap && p.cards.includes("wall") && !holdCap.castle) {
-    return { type: "card", card: "wall", territoryId: capId };
-  }
-  if (p.cards.includes("forge") && p.gold < 6) {
-    return { type: "card", card: "forge", territoryId: holdCap?.id };
-  }
-
-  for (const home of lands) {
-    const need = garrisonKeep(state, home, player, home.id === capId, spec);
-    if (standing(home) >= need && standing(home) >= spec.landFloor) continue;
     for (const t of lands) {
-      if (t.id === home.id) continue;
-      if (!legalMarchTargets(state, t.id).includes(home.id)) continue;
-      const send = splitSend(t, garrisonKeep(state, t, player, t.id === capId, spec));
+      if (t.id === capId) continue;
+      if (!legalMarchTargets(state, t.id).includes(capId)) continue;
+      const send = splitSend(t, garrisonKeep(state, t, player, false, spec));
       if (sendCount(send) < 1) continue;
-      return { type: "march", from: t.id, to: home.id, ...send };
+      return { type: "march", from: t.id, to: capId, ...send };
     }
+  }
+
+  if (spec.raid && p.cards.includes("raid")) {
+    const target = raidTarget(state, player);
+    if (target) return { type: "card", card: "raid", territoryId: target };
   }
 
   const prey = weakestPrey(state, player, capId, spec);
   if (prey) {
     return { type: "march", from: prey.from, to: prey.to, ...prey.send };
+  }
+
+  const stack = holdCap ?? lands.reduce((a, b) => (standing(a) >= standing(b) ? a : b));
+  let trainAt = stack;
+  let stoutBorder = false;
+  for (const t of lands) {
+    const walk = landWalk(state, t, player);
+    if (!walk.length) continue;
+    stoutBorder = true;
+    const foe = walk
+      .map((id) => state.territories[id]!)
+      .sort((a, b) => hostDefense(state, a) - hostDefense(state, b))[0]!;
+    if (standing(t) <= hostDefense(state, foe) + 1) trainAt = t;
+  }
+
+  if (stoutBorder && p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1) && !saving) {
+    return { type: "train", territoryId: trainAt.id, kind: "levy" };
+  }
+  if (stoutBorder && holdCap && p.cards.includes("levy")) {
+    return { type: "card", card: "levy", territoryId: trainAt.id };
+  }
+
+  if (isolated) {
+    for (const t of lands) {
+      const meta = TERRITORY_BY_ID[t.id]!;
+      if (constructionBusy(state, t.id)) continue;
+      const port = worksCost(p, "port");
+      if (meta.coastal && !t.port && p.gold >= port.gold && p.wood >= port.wood) {
+        return { type: "build", territoryId: t.id, kind: "port" };
+      }
+    }
+    for (const t of lands) {
+      if (constructionBusy(state, t.id)) continue;
+      const ship = worksCost(p, "ship");
+      const keelWant = diff === "hard" ? 4 : 2;
+      if (t.port && t.ships < keelWant && t.ships < shipsCap(t) && p.gold >= ship.gold && p.wood >= ship.wood) {
+        return { type: "build", territoryId: t.id, kind: "ship" };
+      }
+    }
+  }
+
+  if (hungry) {
+    for (const t of lands) {
+      if (constructionBusy(state, t.id) || t.farm) continue;
+      const farm = worksCost(p, "farm");
+      if (p.gold >= farm.gold && p.wood >= farm.wood) {
+        return { type: "build", territoryId: t.id, kind: "farm" };
+      }
+    }
+  }
+
+  if (canDragonNow && nest && wagesOk(1) && !stoutBorder) {
+    return { type: "train", territoryId: nest.id, kind: "dragon" };
+  }
+  if (canBeastNow && holdCap && wagesOk(BEAST_WAGE) && !stoutBorder) {
+    return { type: "train", territoryId: holdCap.id, kind: "beast" };
+  }
+
+  if (stoutBorder && spec.knights && p.gold >= UNIT_COST.knight.gold && p.metal >= UNIT_COST.knight.metal && wagesOk(1) && trainAt.levy >= 2) {
+    return { type: "train", territoryId: trainAt.id, kind: "knight" };
+  }
+
+  if (stoutBorder && p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1)) {
+    return { type: "train", territoryId: trainAt.id, kind: "levy" };
+  }
+
+  if (saving && isolated) {
+    if (p.cards.includes("forge") && p.gold < UNIT_COST.dragon.gold) {
+      return { type: "card", card: "forge", territoryId: holdCap?.id };
+    }
+    if (saving === "dragon" && p.cards.includes("tide") && p.wood < 5) {
+      return { type: "card", card: "tide" };
+    }
+  }
+
+  if (!openLand && !canSail) {
+    for (const t of lands) {
+      const meta = TERRITORY_BY_ID[t.id]!;
+      if (constructionBusy(state, t.id)) continue;
+      const mine = worksCost(p, "mine");
+      const market = worksCost(p, "market");
+      const castle = worksCost(p, "castle");
+      const road = worksCost(p, "road");
+      if (!meta.coastal && !t.mine && p.gold >= mine.gold && p.stone >= mine.stone) {
+        return { type: "build", territoryId: t.id, kind: "mine" };
+      }
+      if (!t.road && realm >= 2 && p.gold >= road.gold && p.wood >= road.wood && p.stone >= road.stone) {
+        return { type: "build", territoryId: t.id, kind: "road" };
+      }
+      if (!t.market && p.gold >= market.gold && p.wood >= market.wood) {
+        return { type: "build", territoryId: t.id, kind: "market" };
+      }
+      if (spec.cities && !t.castle && standing(t) >= 4 && p.gold >= castle.gold && p.stone >= castle.stone) {
+        return { type: "build", territoryId: t.id, kind: "castle" };
+      }
+    }
   }
 
   return { type: "end" };
@@ -288,6 +424,8 @@ export function applyAiAction(state: GameState, action: AiAction): GameState {
     if (kind === "mine") return buildMine(state, action.territoryId);
     if (kind === "castle") return buildCastle(state, action.territoryId);
     if (kind === "market") return buildMarket(state, action.territoryId);
+    if (kind === "road") return buildRoad(state, action.territoryId);
+    if (kind === "farm") return buildFarm(state, action.territoryId);
     return buildShip(state, action.territoryId);
   }
   if (action.type === "march") {

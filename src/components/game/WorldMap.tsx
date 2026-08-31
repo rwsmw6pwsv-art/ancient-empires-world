@@ -12,7 +12,7 @@ import {
   type WonderId,
 } from "@/lib/game/landscape";
 import { CAPITOL, type EmpireId, type GameState } from "@/lib/game/types";
-import { TERRITORIES, TERRITORY_BY_ID, WORLD_H, WORLD_W } from "@/lib/game/world";
+import { TERRITORIES, TERRITORY_BY_ID, WORLD_H, WORLD_W, landNeighbors } from "@/lib/game/world";
 import { cn } from "@/lib/utils";
 import { Hint } from "./Hint";
 
@@ -369,6 +369,27 @@ export function WorldMap({
               />
             );
           })}
+          {TERRITORIES.flatMap((d) => {
+            const t = state.territories[d.id]!;
+            if (!t.road || t.owner === "barbarian") return [];
+            return landNeighbors(d.id)
+              .filter((nb) => nb > d.id)
+              .flatMap((nb) => {
+                const u = state.territories[nb]!;
+                if (!u.road || u.owner !== t.owner) return [];
+                const b = TERRITORY_BY_ID[nb]!;
+                return [
+                  <line
+                    key={`road-${d.id}-${nb}`}
+                    x1={d.labelX}
+                    y1={d.labelY}
+                    x2={b.labelX}
+                    y2={b.labelY}
+                    className="map-road"
+                  />,
+                ];
+              });
+          })}
           {OCEAN_LABELS.map((o) => (
             <text
               key={`${o.name}-${o.x}`}
@@ -404,7 +425,9 @@ export function WorldMap({
                 ) : null}
                 {t.port ? <Marker href={PROP_SRC.port} x={cx + 22} y={cy + 16} w={20} h={14} /> : null}
                 {t.mine ? <Marker href={PROP_SRC.mine} x={cx - 22} y={cy + 16} w={18} h={16} /> : null}
+                {t.farm ? <Marker href={PROP_SRC.farm} x={cx - 6} y={cy + 20} w={14} h={12} /> : null}
                 {t.market ? <Marker href={PROP_SRC.market} x={cx + 20} y={cy - 2} w={18} h={16} /> : null}
+                {t.road ? <Marker href={PROP_SRC.road} x={cx - 8} y={cy + 18} w={14} h={12} /> : null}
                 {resource ? (
                   <Marker href={PROP_SRC[resource]} x={cx + 8} y={cy - 14} w={12} h={12} />
                 ) : null}
