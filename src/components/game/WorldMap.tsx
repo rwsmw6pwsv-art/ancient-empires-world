@@ -3,8 +3,6 @@ import { empireOf } from "@/lib/game/empires";
 import { hostDefense, ownedIds, standing } from "@/lib/game/engine";
 import {
   CAPITAL_SRC,
-  CONTINENT_CITY_SRC,
-  CONTINENT_TOWN_SRC,
   LANDSCAPE,
   OCEAN_LABELS,
   PROP_SRC,
@@ -49,12 +47,14 @@ function Marker({
   y,
   w,
   h,
+  live,
 }: {
   href: string;
   x: number;
   y: number;
   w: number;
   h: number;
+  live?: boolean;
 }) {
   return (
     <image
@@ -64,7 +64,7 @@ function Marker({
       width={w}
       height={h}
       preserveAspectRatio="xMidYMax meet"
-      className="map-marker"
+      className={cn("map-marker", live && "marker-live")}
     />
   );
 }
@@ -92,8 +92,28 @@ export function WorldMap({
   const pan = useRef<{ id: number; lastX: number; lastY: number; moved: boolean } | null>(null);
   const pinch = useRef<{ dist: number; view: View } | null>(null);
   const fittedKey = useRef<string>("");
+  const ownersRef = useRef<Record<string, string>>({});
+  const [flashes, setFlashes] = useState<Record<string, number>>({});
   const targetSet = useMemo(() => new Set(targets), [targets]);
   const myIds = useMemo(() => ownedIds(state, 0), [state]);
+  useEffect(() => {
+    const prev = ownersRef.current;
+    const next: Record<string, string> = {};
+    const hit: Record<string, number> = {};
+    for (const t of Object.values(state.territories)) {
+      const key = String(t.owner);
+      next[t.id] = key;
+      if (prev[t.id] && prev[t.id] !== key) hit[t.id] = state.clock.turn;
+    }
+    ownersRef.current = next;
+    if (Object.keys(hit).length) setFlashes((f) => ({ ...f, ...hit }));
+  }, [state.territories, state.clock.turn]);
+
+  useEffect(() => {
+    if (!Object.keys(flashes).length) return;
+    const t = window.setTimeout(() => setFlashes({}), 800);
+    return () => window.clearTimeout(t);
+  }, [flashes]);
 
   const fitTo = useCallback((ids: string[]): boolean => {
     const wrap = wrapRef.current;
@@ -304,7 +324,7 @@ export function WorldMap({
   return (
     <div
       ref={wrapRef}
-      className="relative h-full min-h-[240px] w-full overflow-hidden rounded-[var(--radius-lg)] bg-sea"
+      className="relative h-full min-h-[240px] w-full overflow-hidden rounded-[var(--radius-lg)] bg-[#0f7484]"
       style={{ touchAction: "none", userSelect: "none" }}
     >
       <svg
@@ -321,12 +341,19 @@ export function WorldMap({
       >
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <image
-            href="/map/world.jpg"
+            href="/map/world.webp"
             width={WORLD_W}
             height={WORLD_H}
             preserveAspectRatio="none"
             className="map-relief"
           />
+          <g className="map-weather" opacity={0.9}>
+            <ellipse className="map-cloud map-cloud-a" cx={180} cy={70} rx={90} ry={22} />
+            <ellipse className="map-cloud map-cloud-b" cx={520} cy={120} rx={110} ry={26} />
+            <ellipse className="map-cloud map-cloud-c" cx={860} cy={50} rx={80} ry={18} />
+            <ellipse className="map-cloud map-cloud-a" cx={300} cy={240} rx={70} ry={16} />
+            <ellipse className="map-cloud map-cloud-b" cx={700} cy={200} rx={95} ry={20} />
+          </g>
           {TERRITORIES.map((d) => {
             const t = state.territories[d.id]!;
             const house = t.owner === "barbarian" ? null : empireOf(state.players[t.owner]!.empire);
@@ -345,6 +372,7 @@ export function WorldMap({
                   t.owner === "barbarian" ? "is-barbarian" : "is-owned",
                   selected === d.id && "is-selected",
                   targetSet.has(d.id) && selected !== d.id && "is-target",
+                  flashes[d.id] ? "is-captured" : "",
                 )}
               >
                 <title>{d.name}</title>
@@ -390,6 +418,35 @@ export function WorldMap({
                 ];
               });
           })}
+          {selected
+            ? targets.map((id) => {
+                const from = TERRITORY_BY_ID[selected];
+                const to = TERRITORY_BY_ID[id];
+                if (!from || !to) return null;
+                const dx = to.labelX - from.labelX;
+                const dy = to.labelY - from.labelY;
+                const len = Math.hypot(dx, dy) || 1;
+                const ux = dx / len;
+                const uy = dy / len;
+                const hx = to.labelX - ux * 10;
+                const hy = to.labelY - uy * 10;
+                return (
+                  <g key={`march-${id}`}>
+                    <line
+                      x1={from.labelX}
+                      y1={from.labelY}
+                      x2={hx}
+                      y2={hy}
+                      className="map-march"
+                    />
+                    <polygon
+                      className="map-march-head"
+                      points={`${to.labelX},${to.labelY} ${hx - uy * 4},${hy + ux * 4} ${hx + uy * 4},${hy - ux * 4}`}
+                    />
+                  </g>
+                );
+              })
+            : null}
           {OCEAN_LABELS.map((o) => (
             <text
               key={`${o.name}-${o.x}`}
@@ -409,27 +466,51 @@ export function WorldMap({
             const founder = (Object.entries(CAPITOL) as [EmpireId, string][]).find(([, id]) => id === d.id)?.[0];
             const cx = d.labelX;
             const cy = d.labelY;
+            const isSel = selected === d.id;
             const wonder = land?.wonder as WonderId | undefined;
             const resource = land?.resource as ResourceId | undefined;
+            const house = t.owner === "barbarian" ? null : empireOf(state.players[t.owner]!.empire);
+            const walled = Boolean(t.castle);
+            const cityW = founder ? 30 : walled ? 26 : owned ? 20 : 16;
+            const cityH = cityW;
+            const seat = founder
+              ? CAPITAL_SRC[founder]
+              : !owned
+                ? PROP_SRC.camp
+                : walled
+                  ? PROP_SRC.city
+                  : PROP_SRC.town;
+            const showWorks = view.k >= 1.15;
+            const glow = house?.color ?? "#c4a574";
             return (
               <g key={`m-${d.id}`} className="map-markers">
-                {founder ? (
-                  <Marker href={CAPITAL_SRC[founder]} x={cx} y={cy + 8} w={32} h={32} />
-                ) : !owned ? null : t.castle ? (
-                  <Marker href={CONTINENT_CITY_SRC[d.continent]} x={cx} y={cy + 7} w={26} h={26} />
-                ) : (
-                  <Marker href={CONTINENT_TOWN_SRC[d.continent]} x={cx} y={cy + 6} w={18} h={18} />
-                )}
-                {wonder && !founder ? (
-                  <Marker href={PROP_SRC[wonder]} x={cx - 22} y={cy - 4} w={24} h={22} />
+                <ellipse
+                  className="map-seat-glow"
+                  cx={cx}
+                  cy={cy + 4}
+                  rx={cityW * 0.62}
+                  ry={cityH * 0.28}
+                  fill={glow}
+                />
+                {walled ? (
+                  <Marker href={PROP_SRC.walls} x={cx} y={cy + 12} w={cityW + 18} h={Math.round(cityH * 0.85)} />
                 ) : null}
-                {t.port ? <Marker href={PROP_SRC.port} x={cx + 22} y={cy + 16} w={20} h={14} /> : null}
-                {t.mine ? <Marker href={PROP_SRC.mine} x={cx - 22} y={cy + 16} w={18} h={16} /> : null}
-                {t.farm ? <Marker href={PROP_SRC.farm} x={cx - 6} y={cy + 20} w={14} h={12} /> : null}
-                {t.market ? <Marker href={PROP_SRC.market} x={cx + 20} y={cy - 2} w={18} h={16} /> : null}
-                {t.road ? <Marker href={PROP_SRC.road} x={cx - 8} y={cy + 18} w={14} h={12} /> : null}
+                <Marker href={seat} x={cx} y={cy + 8} w={cityW} h={cityH} live={Boolean(founder) || isSel} />
+                {t.port ? (
+                  <Marker href={PROP_SRC.port} x={cx + cityW * 0.7} y={cy + 16} w={24} h={18} />
+                ) : null}
+                {t.dragons > 0 ? (
+                  <Marker href={PROP_SRC.dragon} x={cx - 2} y={cy - 10} w={20} h={18} live />
+                ) : null}
+                {wonder && !founder ? (
+                  <Marker href={PROP_SRC[wonder]} x={cx - 22} y={cy - 4} w={22} h={20} />
+                ) : null}
+                {showWorks && t.mine ? <Marker href={PROP_SRC.mine} x={cx - cityW * 0.7} y={cy + 16} w={18} h={16} /> : null}
+                {showWorks && t.farm ? <Marker href={PROP_SRC.farm} x={cx - 8} y={cy + 22} w={16} h={14} /> : null}
+                {showWorks && t.market ? <Marker href={PROP_SRC.market} x={cx + 18} y={cy - 4} w={16} h={14} /> : null}
+                {showWorks && t.road ? <Marker href={PROP_SRC.road} x={cx - 10} y={cy + 18} w={12} h={10} /> : null}
                 {resource ? (
-                  <Marker href={PROP_SRC[resource]} x={cx + 8} y={cy - 14} w={12} h={12} />
+                  <Marker href={PROP_SRC[resource]} x={cx + 10} y={cy - 12} w={14} h={14} />
                 ) : null}
               </g>
             );
@@ -489,6 +570,8 @@ export function WorldMap({
           })}
         </g>
       </svg>
+      <div className="map-shimmer" />
+      <div className="map-vignette" />
       <div className="map-zoom" onPointerDown={(e) => e.stopPropagation()}>
         <Hint
           align="end"

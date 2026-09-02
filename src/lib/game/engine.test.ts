@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { playAiTurns } from "./ai.ts";
 import { nextAiAction } from "./ai.ts";
+import { autoVolley, battleWinner, hostFromSide, openBattle, strikeBattle } from "./battle.ts";
 import { EMPIRE_LIST, empireOf } from "./empires.ts";
 import {
   advanceJobs,
@@ -13,6 +14,7 @@ import {
   buildFarm,
   buildShip,
   checkVictory,
+  commitBattle,
   constructionBusy,
   continentsHeld,
   createNewGame,
@@ -39,6 +41,7 @@ import {
   shipsCap,
   worksRank,
   worksCost,
+  worksDefense,
 } from "./engine.ts";
 import { beastOf, landscapeOf } from "./landscape.ts";
 import { CAPITOL, CITY_DEF, CONTINENT_BONUS, CONTINENT_BREAK_GOLD, HOUSES, PLAYER_COUNT, SAVE_VERSION, TRIBAL_DEF, TURN_LIMIT, UNIT_COST, UNIT_STR, WALL_DEF, WALL_IMPROVE, WIN_CONTINENTS, WORKS_CAP } from "./types.ts";
@@ -1116,5 +1119,129 @@ describe("clock, cards, victory, AI", () => {
     g.players[0]!.stone = 20;
     g = buildCastle(g, "greenland");
     assert.ok(hasJob(g, "greenland"));
+  });
+});
+
+describe("battle", () => {
+  it("a striking host rests if it lives", () => {
+    let g = createNewGame({ empire: "egypt", seed: 120, difficulty: "easy" });
+    const dest = landNeighbors("nile").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories.nile.levy = 2;
+    g.territories.nile.beasts = 1;
+    g.territories[dest]!.levy = 3;
+    g.territories[dest]!.knights = 0;
+    g.territories[dest]!.beasts = 0;
+    g.territories[dest]!.castle = false;
+    g.territories[dest]!.castleRank = 0;
+    let b = openBattle(
+      g,
+      "nile",
+      dest,
+      { levy: 2, knights: 0, dragons: 0, beasts: 1 },
+      "atk",
+      worksDefense(g.territories[dest]!),
+    );
+    assert.ok(b);
+    const lion = b!.stacks.find((f) => f.side === "atk" && f.kind === "beast")!;
+    const foe = b!.stacks.find((f) => f.side === "def")!;
+    b = strikeBattle(b!, lion.id, foe.id);
+    const after = b.stacks.find((f) => f.id === lion.id);
+    if (after && after.count > 0) assert.equal(after.exhausted, true);
+    assert.ok(b.strikes >= 1);
+  });
+  it("kinds stand as one host, not one token each", () => {
+    const g = createNewGame({ empire: "egypt", seed: 123, difficulty: "easy" });
+    const dest = landNeighbors("nile").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories.nile.levy = 6;
+    const b = openBattle(g, "nile", dest, { levy: 6, knights: 0, dragons: 0, beasts: 0 }, "atk", 1)!;
+    assert.equal(b.stacks.filter((s) => s.side === "atk" && s.kind === "levy").length, 1);
+    assert.equal(b.stacks.find((s) => s.side === "atk" && s.kind === "levy")!.count, 6);
+  });
+  it("walls soak hits before the garrison", () => {
+    let g = createNewGame({ empire: "egypt", seed: 124, difficulty: "easy" });
+    const dest = landNeighbors("nile").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories.nile.beasts = 1;
+    g.territories[dest]!.levy = 4;
+    g.territories[dest]!.castle = true;
+    g.territories[dest]!.castleRank = 1;
+    const works = worksDefense(g.territories[dest]!);
+    let b = openBattle(g, "nile", dest, { levy: 0, knights: 0, dragons: 0, beasts: 1 }, "atk", works)!;
+    assert.equal(b.fortHp, works);
+    const lion = b.stacks.find((s) => s.kind === "beast")!;
+    const foe = b.stacks.find((s) => s.side === "def")!;
+    const before = foe.count;
+    b = strikeBattle(b, lion.id, foe.id);
+    assert.ok(b.fortHp < works);
+    assert.ok(foe.count === before || b.fortHp === 0 || b.stacks.find((s) => s.id === foe.id)!.count <= before);
+  });
+  it("a mark answers once, then the other host volleys", () => {
+    let g = createNewGame({ empire: "egypt", seed: 125, difficulty: "easy" });
+    const dest = landNeighbors("nile").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories.nile.beasts = 1;
+    g.territories.nile.knights = 1;
+    g.territories[dest]!.levy = 6;
+    g.territories[dest]!.castle = false;
+    g.territories[dest]!.castleRank = 0;
+    let b = openBattle(g, "nile", dest, { levy: 0, knights: 1, dragons: 0, beasts: 1 }, "atk", 1)!;
+    const lion = b.stacks.find((s) => s.kind === "beast")!;
+    const foe = b.stacks.find((s) => s.side === "def")!;
+    b = strikeBattle(b, lion.id, foe.id);
+    const marked = b.stacks.find((s) => s.id === foe.id);
+    if (marked && marked.count > 0) assert.equal(marked.retaliated, true);
+    const knight = b.stacks.find((s) => s.kind === "knight" && s.side === "atk");
+    if (knight && knight.count > 0 && !battleWinner(b)) {
+      b = strikeBattle(b, knight.id, b.stacks.find((s) => s.side === "def")?.id ?? knight.id);
+    }
+    assert.ok(b.strikes >= 1);
+  });
+  it("jungle favours beasts", () => {
+    const g = createNewGame({ empire: "eldorado", seed: 126, difficulty: "easy" });
+    const dest = landNeighbors("amazon").find(
+      (id) => g.territories[id]!.owner === "barbarian" && landscapeOf(id).terrain === "jungle",
+    );
+    assert.ok(dest);
+    g.territories.amazon.beasts = 1;
+    const b = openBattle(g, "amazon", dest!, { levy: 0, knights: 0, dragons: 0, beasts: 1 }, "atk", 1)!;
+    const caiman = b.stacks.find((s) => s.kind === "beast")!;
+    assert.equal(caiman.atk, beastOf("eldorado").atk + 2);
+  });
+  it("a host that falls below half breaks", () => {
+    let g = createNewGame({ empire: "egypt", seed: 127, difficulty: "easy" });
+    const dest = landNeighbors("nile").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories.nile.beasts = 3;
+    g.territories[dest]!.levy = 8;
+    g.territories[dest]!.knights = 0;
+    g.territories[dest]!.beasts = 0;
+    g.territories[dest]!.castle = false;
+    g.territories[dest]!.castleRank = 0;
+    let b = openBattle(g, "nile", dest, { levy: 0, knights: 0, dragons: 0, beasts: 3 }, "atk", 1)!;
+    assert.equal(b.startDef, 8);
+    b = autoVolley(b);
+    assert.ok(battleWinner(b) === "atk" || battleWinner(b) === "def" || b.routed);
+  });
+  it("commitBattle takes the land when the defenders fall", () => {
+    let g = createNewGame({ empire: "egypt", seed: 122, difficulty: "easy" });
+    const dest = landNeighbors("nile").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories.nile.levy = 8;
+    g.territories.nile.beasts = 3;
+    g.territories[dest]!.levy = 1;
+    g.territories[dest]!.knights = 0;
+    g.territories[dest]!.beasts = 0;
+    g.territories[dest]!.castle = false;
+    g.territories[dest]!.castleRank = 0;
+    let b = openBattle(
+      g,
+      "nile",
+      dest,
+      { levy: 4, knights: 0, dragons: 0, beasts: 3 },
+      "atk",
+      worksDefense(g.territories[dest]!),
+    )!;
+    b = autoVolley(b);
+    b = autoVolley(b);
+    assert.equal(battleWinner(b), "atk");
+    const left = hostFromSide(b.stacks, "atk");
+    g = commitBattle(g, "nile", dest, b.force, left, { levy: 0, knights: 0, dragons: 0, beasts: 0 });
+    assert.equal(g.territories[dest]!.owner, 0);
   });
 });

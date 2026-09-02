@@ -1,6 +1,15 @@
 import { empireOf } from "./empires";
 import { create } from "zustand";
-import { playAiTurns } from "./ai";
+import { playAiTurnsUntilBattle } from "./ai";
+import {
+  autoVolley,
+  battleOutcome,
+  battleWinner,
+  hostFromSide,
+  openBattle,
+  strikeBattle,
+  type BattleState,
+} from "./battle";
 import {
   buildCastle,
   buildMarket,
@@ -9,6 +18,7 @@ import {
   buildShip,
   buildRoad,
   buildFarm,
+  commitBattle,
   createNewGame,
   endTurn,
   legalMarchTargets,
@@ -18,9 +28,10 @@ import {
   setMarchFrom,
   trainUnit,
   watchReport,
+  worksDefense,
 } from "./engine";
 import { clearSave, loadGame, saveGame } from "./save";
-import type { CardId, Difficulty, EmpireId, GameState, JobKind, Opening, UnitKind } from "./types";
+import type { CardId, Difficulty, EmpireId, GameState, HostForce, JobKind, Opening, UnitKind } from "./types";
 
 interface GameStore {
   state: GameState | null;
@@ -31,6 +42,7 @@ interface GameStore {
   sendBeasts: number;
   pendingOccupy: { from: string; to: string } | null;
   pendingAttack: { from: string; to: string; levy: number; knights: number; dragons: number; beasts: number } | null;
+  pendingBattle: BattleState | null;
   pendingWatch: string[] | null;
   newGame: (opts: { empire: EmpireId; difficulty?: Difficulty; opening?: Opening }) => void;
   resume: () => boolean;
@@ -45,6 +57,10 @@ interface GameStore {
   occupyRecall: (recall: { levy: number; knights: number; dragons: number; beasts: number; ships?: number }) => void;
   confirmAttack: () => void;
   cancelAttack: () => void;
+  battleStrike: (attackerId: string, targetId: string) => void;
+  battleAuto: () => void;
+  battleFinish: () => void;
+  battleCancel: () => void;
   dismissWatch: () => void;
   finishTurn: () => void;
   abandon: () => void;
@@ -64,6 +80,7 @@ export const useGame = create<GameStore>((set, get) => ({
   sendBeasts: 0,
   pendingOccupy: null,
   pendingAttack: null,
+  pendingBattle: null,
   pendingWatch: null,
   newGame: (opts) => {
     const state = createNewGame(opts);
@@ -81,6 +98,7 @@ export const useGame = create<GameStore>((set, get) => ({
       sendBeasts: 0,
       pendingOccupy: null,
       pendingAttack: null,
+  pendingBattle: null,
       pendingWatch: null,
     });
   },
@@ -97,6 +115,7 @@ export const useGame = create<GameStore>((set, get) => ({
       sendBeasts: 0,
       pendingOccupy: null,
       pendingAttack: null,
+  pendingBattle: null,
       pendingWatch: null,
     });
     return true;
@@ -145,6 +164,7 @@ export const useGame = create<GameStore>((set, get) => ({
         sendDragons: 0,
         sendBeasts: t.beasts ?? 0,
         pendingAttack: null,
+  pendingBattle: null,
       });
       return;
     }
@@ -240,30 +260,101 @@ export const useGame = create<GameStore>((set, get) => ({
     if (!state || !pendingAttack) return;
     const fromId = pendingAttack.from;
     const toId = pendingAttack.to;
-    const wasEnemy = state.territories[toId]!.owner !== 0;
-    const next = persist(
-      resolveAttack(state, fromId, toId, {
-        levy: pendingAttack.levy,
-        knights: pendingAttack.knights,
-        dragons: pendingAttack.dragons,
-        beasts: pendingAttack.beasts,
-      }),
-    );
-    const owned = next.territories[toId]?.owner === 0;
-    set({
-      state: owned ? setMarchFrom(next, toId) : next,
-      selected: toId,
-      sendLevy: owned ? Math.max(1, next.territories[toId]!.levy) : 1,
-      sendKnights: 0,
-      sendDragons: 0,
-      sendBeasts: 0,
-      pendingAttack: null,
-      pendingOccupy: owned && wasEnemy ? { from: fromId, to: toId } : null,
-    });
+    const dest = state.territories[toId]!;
+    const force: HostForce = {
+      levy: pendingAttack.levy,
+      knights: pendingAttack.knights,
+      dragons: pendingAttack.dragons,
+      beasts: pendingAttack.beasts,
+    };
+    if (dest.owner === 0) {
+      const next = persist(resolveAttack(state, fromId, toId, force));
+      set({
+        state: setMarchFrom(next, toId),
+        selected: toId,
+        sendLevy: Math.max(1, next.territories[toId]!.levy),
+        sendKnights: 0,
+        sendDragons: 0,
+        sendBeasts: 0,
+        pendingAttack: null,
+        pendingBattle: null,
+        pendingOccupy: null,
+      });
+      return;
+    }
+    const battle = openBattle(state, fromId, toId, force, "atk", worksDefense(dest));
+    if (!battle) return;
+    set({ pendingAttack: null, pendingBattle: battle, selected: toId });
   },
   cancelAttack: () => {
     const { pendingAttack } = get();
     set({ pendingAttack: null, selected: pendingAttack?.from ?? null });
+  },
+  battleStrike: (attackerId, targetId) => {
+    const { pendingBattle } = get();
+    if (!pendingBattle) return;
+    set({ pendingBattle: strikeBattle(pendingBattle, attackerId, targetId) });
+  },
+  battleAuto: () => {
+    const { pendingBattle } = get();
+    if (!pendingBattle) return;
+    set({ pendingBattle: autoVolley(pendingBattle) });
+  },
+  battleFinish: () => {
+    const { state, pendingBattle } = get();
+    if (!state || !pendingBattle) return;
+    const winner = battleWinner(pendingBattle);
+    if (!winner) return;
+    const { atkLeft, defLeft } = battleOutcome(pendingBattle);
+    const fromId = pendingBattle.fromId;
+    const toId = pendingBattle.toId;
+    const humanAttack = pendingBattle.humanSide === "atk";
+    let next = commitBattle(state, fromId, toId, pendingBattle.force, atkLeft, defLeft);
+    const captured = next.territories[toId]?.owner === 0;
+    let more = { state: next, battle: null as BattleState | null };
+    if (!next.players[next.clock.currentPlayer]!.human) {
+      more = playAiTurnsUntilBattle(next);
+      next = more.state;
+    }
+    const cap = empireOf(next.players[0]!.empire).capitol;
+    const ownedCap = next.territories[cap]?.owner === 0 ? cap : null;
+    const occupy = humanAttack && captured && winner === "atk";
+    set({
+      state: persist(occupy ? setMarchFrom(next, toId) : ownedCap ? setMarchFrom(next, ownedCap) : next),
+      selected: occupy ? toId : ownedCap,
+      sendLevy: occupy
+        ? Math.max(1, next.territories[toId]!.levy)
+        : ownedCap
+          ? Math.max(1, next.territories[ownedCap]!.levy)
+          : 1,
+      sendKnights: 0,
+      sendDragons: 0,
+      sendBeasts: 0,
+      pendingBattle: more.battle,
+      pendingAttack: null,
+      pendingOccupy: occupy ? { from: fromId, to: toId } : null,
+      pendingWatch: null,
+    });
+  },
+  battleCancel: () => {
+    const { state, pendingBattle } = get();
+    if (!state || !pendingBattle || pendingBattle.humanSide !== "atk") return;
+    if (pendingBattle.strikes < 1) {
+      set({ pendingBattle: null, selected: pendingBattle.fromId });
+      return;
+    }
+    const atkLeft = hostFromSide(pendingBattle.stacks, "atk");
+    const defLeft = hostFromSide(pendingBattle.stacks, "def");
+    const next = persist(commitBattle(state, pendingBattle.fromId, pendingBattle.toId, pendingBattle.force, atkLeft, defLeft));
+    set({
+      state: next,
+      selected: pendingBattle.fromId,
+      pendingBattle: null,
+      sendLevy: Math.max(1, next.territories[pendingBattle.fromId]?.levy ?? 1),
+      sendKnights: 0,
+      sendDragons: 0,
+      sendBeasts: 0,
+    });
   },
   dismissWatch: () => set({ pendingWatch: null }),
   finishTurn: () => {
@@ -271,7 +362,8 @@ export const useGame = create<GameStore>((set, get) => ({
     if (!state) return;
     const before = state;
     let next = endTurn(state);
-    next = playAiTurns(next);
+    const paused = playAiTurnsUntilBattle(next);
+    next = paused.state;
     const cap = empireOf(next.players[0]!.empire).capitol;
     const ownedCap = next.territories[cap]?.owner === 0 ? cap : null;
     const report = watchReport(before, next);
@@ -284,7 +376,8 @@ export const useGame = create<GameStore>((set, get) => ({
       sendBeasts: 0,
       pendingOccupy: null,
       pendingAttack: null,
-      pendingWatch: report.length ? report : null,
+      pendingBattle: paused.battle,
+      pendingWatch: paused.battle ? null : report.length ? report : null,
     });
   },
   abandon: () => {
@@ -294,6 +387,7 @@ export const useGame = create<GameStore>((set, get) => ({
       selected: null,
       pendingOccupy: null,
       pendingAttack: null,
+      pendingBattle: null,
       pendingWatch: null,
     });
   },

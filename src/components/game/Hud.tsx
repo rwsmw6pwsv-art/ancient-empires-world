@@ -51,17 +51,18 @@ export function Hud({ state, onEnd, onQuit }: { state: GameState; onEnd: () => v
           </span>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-        <ResourceMark kind="gold" amount={human.gold} />
-        <ResourceMark kind="silver" amount={human.silver} />
-        <ResourceMark kind="food" amount={human.food} />
-        <ResourceMark kind="metal" amount={human.metal} />
-        <ResourceMark kind="wood" amount={human.wood} />
-        <ResourceMark kind="stone" amount={human.stone} />
-        <span className="hidden items-center gap-1 text-xs text-muted md:inline-flex">
-          +<ResourceMark kind="gold" amount={inc.gold} />
-          +<ResourceMark kind="silver" amount={Math.max(0, inc.silver - up.silver)} />
-          +<ResourceMark kind="food" amount={Math.max(0, inc.food - grain)} /> next tribute
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <ResourceMark kind="gold" amount={human.gold} compact />
+        <ResourceMark kind="silver" amount={human.silver} compact />
+        <ResourceMark kind="food" amount={human.food} compact />
+        <ResourceMark kind="metal" amount={human.metal} compact />
+        <ResourceMark kind="wood" amount={human.wood} compact />
+        <ResourceMark kind="stone" amount={human.stone} compact />
+        <span className="hidden items-center gap-1 text-xs md:inline-flex">
+          +<ResourceMark kind="gold" amount={inc.gold} compact />
+          +<ResourceMark kind="silver" amount={Math.max(0, inc.silver - up.silver)} compact />
+          +<ResourceMark kind="food" amount={Math.max(0, inc.food - grain)} compact />
+          <span className="text-muted">next tribute</span>
         </span>
       </div>
     </header>

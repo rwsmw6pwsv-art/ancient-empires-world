@@ -641,36 +641,51 @@ function combatRound(
   return { atkLoss: 1, defLoss: 1 };
 }
 
-export function resolveAttack(
+type AssaultMeta = {
+  fromId: string;
+  toId: string;
+  force: { levy: number; knights: number; dragons: number; beasts: number };
+  convoy: number;
+  tribalCamp: boolean;
+  defHost: number;
+  prevOwner: TerritoryState["owner"];
+  destCont: ContinentId;
+  brokeContinent: boolean;
+  wasCapitol: boolean;
+  continentsBefore: number;
+  player: PlayerId;
+};
+
+function prepareAssault(
   state: GameState,
   fromId: string,
   toId: string,
   force: { levy: number; knights: number; dragons: number; beasts?: number },
-): GameState {
+): { next: GameState; meta: AssaultMeta } | { next: GameState; friendly: true } | null {
   const next = clone(state);
   const from = terr(next, fromId);
   const to = terr(next, toId);
   const player = next.clock.currentPlayer;
   const sendBeasts = force.beasts ?? 0;
-  if (from.owner !== player) return state;
-  if (force.levy < 0 || force.knights < 0 || force.dragons < 0 || sendBeasts < 0) return state;
+  if (from.owner !== player) return null;
+  if (force.levy < 0 || force.knights < 0 || force.dragons < 0 || sendBeasts < 0) return null;
   if (
     force.levy > from.levy ||
     force.knights > from.knights ||
     force.dragons > from.dragons ||
     sendBeasts > (from.beasts ?? 0)
   ) {
-    return state;
+    return null;
   }
   const sent = force.levy + force.knights + force.dragons + sendBeasts;
-  if (sent < 1) return state;
+  if (sent < 1) return null;
   const legal = legalMarchTargets(next, fromId);
-  if (!legal.includes(toId)) return state;
+  if (!legal.includes(toId)) return null;
 
   const seaHop = !landNeighbors(fromId).includes(toId);
   let convoy = 0;
   if (seaHop) {
-    if (!TERRITORY_BY_ID[fromId]?.coastal || from.ships < 1) return state;
+    if (!TERRITORY_BY_ID[fromId]?.coastal || from.ships < 1) return null;
     from.ships -= 1;
     convoy = 1;
   }
@@ -703,19 +718,125 @@ export function resolveAttack(
     if (convoy) berthShip(from, to);
     log(next, `${empireOf(playerOf(next, player).empire).name} ${convoy ? "sails" : "marches"} into ${TERRITORY_BY_ID[toId]!.name}.`);
     next.marchFrom = null;
-    return next;
+    return { next, friendly: true };
   }
 
-  const rng = mulberry32((next.seed + next.clock.turn * 997 + sent * 13 + toId.length) >>> 0);
-  let aLevy = force.levy;
-  let aKnights = force.knights;
-  let aDragons = force.dragons;
+  return {
+    next,
+    meta: {
+      fromId,
+      toId,
+      force: { levy: force.levy, knights: force.knights, dragons: force.dragons, beasts: sendBeasts },
+      convoy,
+      tribalCamp,
+      defHost,
+      prevOwner,
+      destCont,
+      brokeContinent,
+      wasCapitol,
+      continentsBefore,
+      player,
+    },
+  };
+}
+
+function finishAssault(
+  next: GameState,
+  meta: AssaultMeta,
+  aLevy: number,
+  aKnights: number,
+  aDragons: number,
+  aBeasts: number,
+  dLevy: number,
+  dKnights: number,
+  dDragons: number,
+  dBeasts: number,
+): GameState {
+  const from = terr(next, meta.fromId);
+  const to = terr(next, meta.toId);
+  const attackerName = empireOf(playerOf(next, meta.player).empire).name;
+  const place = TERRITORY_BY_ID[meta.toId]!.name;
+  const aliveAtk = aLevy + aKnights + aDragons + aBeasts;
+  const aliveDef = dLevy + dKnights + dDragons + dBeasts;
+
+  if (aliveDef <= 0 && aliveAtk > 0) {
+    const prev = to.owner;
+    to.owner = meta.player;
+    to.levy = aLevy;
+    to.knights = aKnights;
+    to.dragons = aDragons;
+    to.beasts = aBeasts;
+    if (to.dragons > DRAGON_CAP) {
+      from.dragons += to.dragons - DRAGON_CAP;
+      to.dragons = DRAGON_CAP;
+    }
+    to.ships = 0;
+    if (meta.convoy) berthShip(from, to);
+    to.pressure = 0;
+    if ((to.population ?? 0) < 1) to.population = 1;
+    grantSpoils(next, meta.player, meta.toId, meta.defHost, meta.brokeContinent);
+    if (prev === "barbarian") {
+      to.levy += 1;
+      log(next, `${attackerName} takes ${place} and strips the camp.`);
+    } else {
+      const leftover = ownedIds(next, prev).length;
+      if (leftover === 0) {
+        playerOf(next, prev).alive = false;
+        log(next, `${empireOf(playerOf(next, prev).empire).name} is broken.`);
+      }
+      if (meta.brokeContinent) {
+        log(next, `${attackerName} cracks the ${CONTINENT_NAMES[meta.destCont]} lock on ${place}.`);
+      } else {
+        log(next, `${attackerName} takes ${place}.`);
+      }
+    }
+    if (meta.wasCapitol) {
+      const nest = placeDragon(next, meta.player, meta.toId, meta.fromId);
+      if (nest) log(next, `A dragon wakes in ${TERRITORY_BY_ID[nest]!.name} over the fallen capital.`);
+    }
+    if (continentsHeld(next, meta.player).length > meta.continentsBefore) {
+      const nest = placeDragon(next, meta.player, meta.toId, meta.fromId);
+      if (nest) log(next, `${CONTINENT_NAMES[meta.destCont]} yields a dragon in ${TERRITORY_BY_ID[nest]!.name}.`);
+    }
+  } else {
+    to.levy = dLevy;
+    to.knights = dKnights;
+    to.dragons = dDragons;
+    to.beasts = dBeasts;
+    from.levy += aLevy;
+    from.knights += aKnights;
+    from.dragons += aDragons;
+    from.beasts = (from.beasts ?? 0) + aBeasts;
+    if (meta.convoy && aliveAtk > 0) from.ships += meta.convoy;
+    if (meta.tribalCamp) to.pressure = 3;
+    log(next, `${attackerName} is thrown back from ${place}.`);
+  }
+  next.marchFrom = null;
+  return checkVictory(next);
+}
+
+export function resolveAttack(
+  state: GameState,
+  fromId: string,
+  toId: string,
+  force: { levy: number; knights: number; dragons: number; beasts?: number },
+): GameState {
+  const prepared = prepareAssault(state, fromId, toId, force);
+  if (!prepared) return state;
+  if ("friendly" in prepared) return prepared.next;
+  const { next, meta } = prepared;
+  const to = terr(next, toId);
+  const sendBeasts = meta.force.beasts;
+  const rng = mulberry32((next.seed + next.clock.turn * 997 + (meta.force.levy + meta.force.knights + meta.force.dragons + sendBeasts) * 13 + toId.length) >>> 0);
+  let aLevy = meta.force.levy;
+  let aKnights = meta.force.knights;
+  let aDragons = meta.force.dragons;
   let aBeasts = sendBeasts;
   let dLevy = to.levy;
   let dKnights = to.knights;
   let dDragons = to.dragons;
   let dBeasts = to.beasts ?? 0;
-  const support = supportingDragonDamage(next, player, toId);
+  const support = supportingDragonDamage(next, meta.player, toId);
   if (support > 0) {
     const hit = applyStrikeToDefense(dLevy, dKnights, dDragons, support, dBeasts);
     dLevy = hit.levy;
@@ -723,7 +844,7 @@ export function resolveAttack(
     dDragons = hit.dragons;
     dBeasts = hit.beasts;
   }
-  const atkBeast = beastOf(playerOf(next, player).empire);
+  const atkBeast = beastOf(playerOf(next, meta.player).empire);
   const defBeast = beastOfOwner(next, to.owner);
   const works = worksDefense(to);
   let guard = 24;
@@ -759,64 +880,32 @@ export function resolveAttack(
       aBeasts = h.beasts;
     }
   }
+  return finishAssault(next, meta, aLevy, aKnights, aDragons, aBeasts, dLevy, dKnights, dDragons, dBeasts);
+}
 
-  const attackerName = empireOf(playerOf(next, player).empire).name;
-  const place = TERRITORY_BY_ID[toId]!.name;
-
-  if (aliveDef() <= 0 && aliveAtk() > 0) {
-    const prev = to.owner;
-    to.owner = player;
-    to.levy = aLevy;
-    to.knights = aKnights;
-    to.dragons = aDragons;
-    to.beasts = aBeasts;
-    if (to.dragons > DRAGON_CAP) {
-      from.dragons += to.dragons - DRAGON_CAP;
-      to.dragons = DRAGON_CAP;
-    }
-    to.ships = 0;
-    if (convoy) berthShip(from, to);
-    to.pressure = 0;
-    if ((to.population ?? 0) < 1) to.population = 1;
-    grantSpoils(next, player, toId, defHost, brokeContinent);
-    if (prev === "barbarian") {
-      to.levy += 1;
-      log(next, `${attackerName} takes ${place} and strips the camp.`);
-    } else {
-      const leftover = ownedIds(next, prev).length;
-      if (leftover === 0) {
-        playerOf(next, prev).alive = false;
-        log(next, `${empireOf(playerOf(next, prev).empire).name} is broken.`);
-      }
-      if (brokeContinent) {
-        log(next, `${attackerName} cracks the ${CONTINENT_NAMES[destCont]} lock on ${place}.`);
-      } else {
-        log(next, `${attackerName} takes ${place}.`);
-      }
-    }
-    if (wasCapitol) {
-      const nest = placeDragon(next, player, toId, fromId);
-      if (nest) log(next, `A dragon wakes in ${TERRITORY_BY_ID[nest]!.name} over the fallen capital.`);
-    }
-    if (continentsHeld(next, player).length > continentsBefore) {
-      const nest = placeDragon(next, player, toId, fromId);
-      if (nest) log(next, `${CONTINENT_NAMES[destCont]} yields a dragon in ${TERRITORY_BY_ID[nest]!.name}.`);
-    }
-  } else {
-    to.levy = dLevy;
-    to.knights = dKnights;
-    to.dragons = dDragons;
-    to.beasts = dBeasts;
-    from.levy += aLevy;
-    from.knights += aKnights;
-    from.dragons += aDragons;
-    from.beasts = (from.beasts ?? 0) + aBeasts;
-    if (convoy && aliveAtk() > 0) from.ships += convoy;
-    if (tribalCamp) to.pressure = 3;
-    log(next, `${attackerName} is thrown back from ${place}.`);
-  }
-  next.marchFrom = null;
-  return checkVictory(next);
+export function commitBattle(
+  state: GameState,
+  fromId: string,
+  toId: string,
+  force: HostForce,
+  atkLeft: HostForce,
+  defLeft: HostForce,
+): GameState {
+  const prepared = prepareAssault(state, fromId, toId, force);
+  if (!prepared) return state;
+  if ("friendly" in prepared) return prepared.next;
+  return finishAssault(
+    prepared.next,
+    prepared.meta,
+    atkLeft.levy,
+    atkLeft.knights,
+    atkLeft.dragons,
+    atkLeft.beasts,
+    defLeft.levy,
+    defLeft.knights,
+    defLeft.dragons,
+    defLeft.beasts,
+  );
 }
 
 export function marchArmy(

@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Footprints, Hammer, Swords } from "lucide-react";
 import { legalMarchTargets } from "@/lib/game/engine";
 import { useGame } from "@/lib/game/store";
 import type { Difficulty, EmpireId, Opening } from "@/lib/game/types";
 import { HOUSES } from "@/lib/game/types";
 import { cn } from "@/lib/utils";
 import { EndScreen } from "./EndScreen";
+import { BattleScreen } from "./BattleScreen";
 import { Hud } from "./Hud";
 import { ActionSheet, AttackPreview, OccupySheet, WatchReport, type ActionKind, ProvinceBanner } from "./Inspector";
 import { WorldMap } from "./WorldMap";
+import { ActionIcon } from "./Cost";
 import { Hint } from "./Hint";
 
 export function PlayScreen({
@@ -31,6 +32,7 @@ export function PlayScreen({
     sendBeasts,
     pendingOccupy,
     pendingAttack,
+    pendingBattle,
     pendingWatch,
     newGame,
     resume,
@@ -44,6 +46,10 @@ export function PlayScreen({
     occupyRecall,
     confirmAttack,
     cancelAttack,
+    battleStrike,
+    battleAuto,
+    battleFinish,
+    battleCancel,
     dismissWatch,
     finishTurn,
     abandon,
@@ -122,6 +128,16 @@ export function PlayScreen({
         <div className="pointer-events-none absolute left-5 top-4 right-5 z-10 sm:left-6 sm:right-auto">
           <ProvinceBanner state={state} selected={selected} />
         </div>
+        {pendingBattle ? (
+          <BattleScreen
+            state={state}
+            battle={pendingBattle}
+            onStrike={battleStrike}
+            onAuto={battleAuto}
+            onFinish={battleFinish}
+            onCancel={battleCancel}
+          />
+        ) : null}
         {pendingAttack ? (
           <div className="absolute inset-x-3 bottom-2 z-20 sm:inset-x-4">
             <AttackPreview
@@ -172,11 +188,11 @@ export function PlayScreen({
       <nav className="grid shrink-0 grid-cols-3 gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
         {(
           [
-            ["train", "Train", Swords, "Raise men (1/1), knights (2/2), or one dragon (25/25) in the selected city. House beasts hunt (13–16 attack, 3 silver wages) and raise only at your capital."],
-            ["march", "March", Footprints, "Set the host, then tap a neighbour to attack or reinforce."],
-            ["build", "Build", Hammer, "Raise a port, mine, market, walls or ship in the selected land."],
+            ["train", "Train", "Raise men, knights, or a dragon in the selected city. House beasts raise only at your capital."],
+            ["march", "March", "Set the host, then tap a neighbour to attack or reinforce."],
+            ["build", "Build", "Raise a port, mine, market, walls or ship in the selected land."],
           ] as const
-        ).map(([id, label, Icon, hint]) => (
+        ).map(([id, label, hint]) => (
           <div key={id} className="flex items-center gap-1">
             <Hint text={hint} />
             <button
@@ -192,7 +208,7 @@ export function PlayScreen({
                 action === id && "border-fg bg-surface text-fg",
               )}
             >
-              <Icon className="size-4" aria-hidden="true" />
+              <ActionIcon kind={id} />
               {label}
             </button>
           </div>

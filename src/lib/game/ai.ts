@@ -22,7 +22,10 @@ import {
   worksRank,
   foodNeed,
   shipsCap,
+  worksDefense,
 } from "./engine";
+import type { BattleState } from "./battle";
+import { openBattle } from "./battle";
 import type { AiAction, Difficulty, GameState, JobKind, PlayerId, TerritoryState } from "./types";
 import { UNIT_COST, WORKS_CAP, BEAST_WAGE } from "./types";
 import { TERRITORY_BY_ID, continentTerritories, landNeighbors } from "./world";
@@ -442,6 +445,14 @@ export function applyAiAction(state: GameState, action: AiAction): GameState {
 
 /** Play every rival court until the human's watch returns. */
 export function playAiTurns(state: GameState, maxSteps = 800): GameState {
+  return playAiTurnsUntilBattle(state, maxSteps).state;
+}
+
+/** Same as playAiTurns, but pause when a rival marches on the human. */
+export function playAiTurnsUntilBattle(
+  state: GameState,
+  maxSteps = 800,
+): { state: GameState; battle: BattleState | null } {
   let next = state;
   let steps = 0;
   let acted = 0;
@@ -458,13 +469,27 @@ export function playAiTurns(state: GameState, maxSteps = 800): GameState {
       continue;
     }
     const action = nextAiAction(next);
+    if (action.type === "march") {
+      const dest = next.territories[action.to];
+      if (dest && dest.owner === 0) {
+        const battle = openBattle(
+          next,
+          action.from,
+          action.to,
+          { levy: action.levy, knights: action.knights, dragons: action.dragons, beasts: action.beasts },
+          "def",
+          worksDefense(dest),
+        );
+        if (battle) return { state: next, battle };
+      }
+    }
     const before = next;
     next = applyAiAction(next, action);
     if (action.type !== "end" && next === before) next = endTurn(next);
     acted += 1;
     steps += 1;
   }
-  return next;
+  return { state: next, battle: null };
 }
 
 export function frontierPressure(state: GameState, player: PlayerId): number {

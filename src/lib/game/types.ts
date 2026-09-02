@@ -235,6 +235,14 @@ export const UNIT_DEF: Record<UnitKind, number> = {
   dragon: 25,
 };
 
+/** Hit points per body on the field. */
+export const UNIT_HP: Record<UnitKind, number> = {
+  levy: 1,
+  knight: 2,
+  beast: 3,
+  dragon: 5,
+};
+
 /** Attack value — used where a single strength is needed. */
 export const UNIT_STR = UNIT_ATK;
 

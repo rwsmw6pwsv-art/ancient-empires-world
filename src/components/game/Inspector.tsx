@@ -4,17 +4,17 @@ import { constructionBusy, defenseStrength, forceStrength, hasJob, hostAttack, h
 import type { EmpireId, GameState, JobKind, UnitKind } from "@/lib/game/types";
 import { CAPITOL, CONTINENT_NAMES, UNIT_COST, WORKS_CAP } from "@/lib/game/types";
 import { TERRITORY_BY_ID, seaNeighbors } from "@/lib/game/world";
-import { landscapeOf, beastOf, FAUNA_LABEL, RESOURCE_LABEL, TERRAIN_LABEL, WONDER_LABEL } from "@/lib/game/landscape";
+import { landscapeOf, beastOf, BEAST_SRC, CAPITAL_SRC, FAUNA_LABEL, PROP_SRC, RESOURCE_LABEL, TERRAIN_LABEL, WONDER_LABEL } from "@/lib/game/landscape";
 import { Button } from "@/components/ui/button";
 import { sfx } from "@/lib/sfx";
-import { CostRow } from "./Cost";
+import { CostRow, HostStrip, ResourceDot, UnitMark, WorkMark } from "./Cost";
 import { Hint } from "./Hint";
 
 export type ActionKind = "train" | "march" | "build";
 
 const TRAIN_HINT = {
   levy: "Raise men here. Attack 1, defence 1. Costs gold and metal. One silver wage per two men, at least one while they stand.",
-  knight: "Raise a knight here. Attack 2, defence 2. Costs gold and metal.",
+  knight: "Raise a mounted knight — cavalry on horseback. Attack 2, defence 2. Costs gold and metal.",
   dragon: "Raise a dragon here. Attack 25, defence 25. Costs 25 gold. One dragon per province.",
 } as const;
 
@@ -53,44 +53,62 @@ export function ProvinceBanner({ state, selected }: { state: GameState; selected
   const capHouse = isCap ? Object.entries(CAPITOL).find(([, id]) => id === selected)?.[0] : null;
   const ownerBeast = t.owner === "barbarian" ? null : beastOf(state.players[t.owner]!.empire);
   const beastName = ownerBeast?.name ?? "Beasts";
+  const works = [
+    t.castle ? `Walls${worksRank(t, "castle") > 1 ? ` ${"I".repeat(worksRank(t, "castle"))}` : ""}` : null,
+    t.market ? `Market${worksRank(t, "market") > 1 ? ` ${"I".repeat(worksRank(t, "market"))}` : ""}` : null,
+    t.port ? `Port${worksRank(t, "port") > 1 ? ` ${"I".repeat(worksRank(t, "port"))}` : ""} · ${t.ships} ships` : null,
+    t.mine ? `Mine${worksRank(t, "mine") > 1 ? ` ${"I".repeat(worksRank(t, "mine"))}` : ""}` : null,
+    t.road ? "Road" : null,
+    t.farm ? `Farm${worksRank(t, "farm") > 1 ? ` ${"I".repeat(worksRank(t, "farm"))}` : ""}` : null,
+  ].filter(Boolean);
+  const detail = [
+    TERRAIN_LABEL[land.terrain],
+    t.owner !== "barbarian" ? "City" : null,
+    ...works,
+    land.wonder ? WONDER_LABEL[land.wonder] : null,
+    land.fauna ? `${FAUNA_LABEL[land.fauna]} roam here` : null,
+    t.owner === "barbarian"
+      ? t.pressure > 0
+        ? "Camp is reeling from a raid."
+        : t.castle || t.knights
+          ? "Palisaded camp — will raid neighbouring empires if left."
+          : "Stout camp — will raid neighbouring empires if left."
+      : null,
+    isCap ? "Capital mint — pays silver each watch" : null,
+    land.resource
+      ? `rich in ${RESOURCE_LABEL[land.resource]}${t.market || t.port ? " · trade bonus" : " · raise a market or port to trade it"}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="pointer-events-none max-w-md rounded-[var(--radius-md)] border border-border bg-surface/90 px-3 py-2 backdrop-blur-sm">
-      <p className="font-display text-sm tracking-wide uppercase">{meta.name}</p>
-      <p className="text-xs text-muted">
-        {CONTINENT_NAMES[meta.continent]}
-        {capHouse ? ` · capital of ${empireOf(capHouse as EmpireId).name}` : ` · ${ownerLabel}`}
+    <div className="max-w-[16rem] rounded-[var(--radius-md)] border border-border bg-surface/90 px-2.5 py-1.5 backdrop-blur-sm sm:max-w-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-display text-sm tracking-wide uppercase">{meta.name}</p>
+          <p className="truncate text-[11px] text-muted">
+            {CONTINENT_NAMES[meta.continent]}
+            {capHouse ? ` · ${empireOf(capHouse as EmpireId).name}` : ` · ${ownerLabel}`}
+          </p>
+        </div>
+        <span className="pointer-events-auto mt-0.5 shrink-0">
+          <Hint text={detail} />
+        </span>
+      </div>
+      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+        <UnitMark kind="levy" amount={t.levy} />
+        <UnitMark kind="knight" amount={t.knights} />
+        <UnitMark kind="beast" amount={t.beasts ?? 0} beastName={beastName} beastSrc={ownerBeast ? BEAST_SRC[ownerBeast.id] : null} />
+        <UnitMark kind="dragon" amount={t.dragons} />
+        {t.castle ? <WorkMark kind="walls" /> : null}
+        {t.port ? <WorkMark kind="port" /> : null}
+        {t.mine ? <WorkMark kind="mine" /> : null}
+        {t.farm ? <WorkMark kind="farm" /> : null}
+        {t.market ? <WorkMark kind="market" /> : null}
+        {t.road ? <WorkMark kind="road" /> : null}
+        {land.resource ? <ResourceDot kind={land.resource} /> : null}
       </p>
-      <p className="mt-1 text-xs tabular-nums text-fg">
-        Attack {hostAttack(state, t)} · Defence {hostDefense(state, t)} · Men {t.levy} · Knights {t.knights} ·{" "}
-        {beastName} {t.beasts ?? 0} · Dragons {t.dragons} · Host {standing(t)} · Citizens {t.population ?? 0}
-      </p>
-      <p className="text-xs text-muted">
-        {TERRAIN_LABEL[land.terrain]}
-        {t.owner !== "barbarian" ? " · City" : ""}
-        {t.castle ? ` · Walls${worksRank(t, "castle") > 1 ? ` ${"I".repeat(worksRank(t, "castle"))}` : ""}` : ""}
-        {t.market ? ` · Market${worksRank(t, "market") > 1 ? ` ${"I".repeat(worksRank(t, "market"))}` : ""}` : ""}
-        {t.port ? ` · Port${worksRank(t, "port") > 1 ? ` ${"I".repeat(worksRank(t, "port"))}` : ""} · ${t.ships} ships` : t.mine ? ` · Mine${worksRank(t, "mine") > 1 ? ` ${"I".repeat(worksRank(t, "mine"))}` : ""}` : ""}
-        {t.road ? " · Road" : ""}
-        {t.farm ? ` · Farm${worksRank(t, "farm") > 1 ? ` ${"I".repeat(worksRank(t, "farm"))}` : ""}` : ""}
-      </p>
-      {land.wonder ? <p className="text-xs text-fg">{WONDER_LABEL[land.wonder]}</p> : null}
-      {land.fauna ? <p className="text-xs text-muted">{FAUNA_LABEL[land.fauna]} roam here</p> : null}
-      {t.owner === "barbarian" ? (
-        <p className="text-xs text-muted">
-          {t.pressure > 0
-            ? "Camp is reeling from a raid."
-            : t.castle || t.knights
-              ? "Palisaded camp — will raid neighbouring empires if left."
-              : "Stout camp — will raid neighbouring empires if left."}
-        </p>
-      ) : null}
-      {isCap ? <p className="text-xs text-muted">Capital mint — pays silver each watch</p> : null}
-      {land.resource ? (
-        <p className="text-xs text-muted">
-          rich in {RESOURCE_LABEL[land.resource]}
-          {t.market || t.port ? " · trade bonus" : " · raise a market or port to trade it"}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -160,7 +178,10 @@ export function ActionSheet({
                 disabled={kind === "dragon" && t.dragons >= 1}
                 onClick={() => onTrain(kind)}
               >
-                <span>{kind === "levy" ? "Men" : kind[0]!.toUpperCase() + kind.slice(1)}</span>
+                <span className="inline-flex items-center gap-1">
+                  <UnitMark kind={kind === "levy" ? "levy" : kind === "knight" ? "knight" : "dragon"} />
+                  <span>{kind === "levy" ? "Men" : kind === "knight" ? "Knight" : kind[0]!.toUpperCase() + kind.slice(1)}</span>
+                </span>
                 <CostRow {...UNIT_COST[kind]} />
               </Button>
             </div>
@@ -171,7 +192,10 @@ export function ActionSheet({
                 text={`Raise ${beastOf(human.empire).name} at the capital only. Attack ${beastOf(human.empire).atk}, defence ${beastOf(human.empire).def}, ${beastOf(human.empire).cost} gold, 3 silver wages. Hunters — send them, do not park them.`}
               />
               <Button size="sm" variant="secondary" className="h-9 flex-1 justify-between px-2" onClick={() => onTrain("beast")}>
-                <span>{beastOf(human.empire).name}</span>
+                <span className="inline-flex items-center gap-1">
+                  <UnitMark kind="beast" beastSrc={BEAST_SRC[beastOf(human.empire).id]} beastName={beastOf(human.empire).name} />
+                  <span>{beastOf(human.empire).name}</span>
+                </span>
                 <CostRow gold={beastOf(human.empire).cost} />
               </Button>
             </div>
@@ -230,7 +254,10 @@ export function ActionSheet({
                 disabled={j.disabled}
                 onClick={() => onBuild(j.kind)}
               >
-                <span>{j.label}</span>
+                <span className="inline-flex items-center gap-1">
+                  <WorkMark kind={j.kind === "ship" ? "port" : j.kind === "castle" ? "walls" : j.kind} />
+                  <span>{j.label}</span>
+                </span>
                 <CostRow {...worksCost(human, j.kind, t)} />
               </Button>
             </div>
@@ -258,7 +285,10 @@ export function ActionSheet({
         <span className="text-muted"> · {stay} stay</span>
       </p>
       <label className="flex items-center justify-between gap-2 text-xs">
-        Men
+        <span className="inline-flex items-center gap-1">
+          <UnitMark kind="levy" />
+          Men
+        </span>
         <input
           className="flex-1"
           type="range"
@@ -275,7 +305,10 @@ export function ActionSheet({
         </span>
       </label>
       <label className="flex items-center justify-between gap-2 text-xs">
-        Knights
+        <span className="inline-flex items-center gap-1">
+          <UnitMark kind="knight" />
+          Knights
+        </span>
         <input
           className="flex-1"
           type="range"
@@ -292,7 +325,10 @@ export function ActionSheet({
         </span>
       </label>
       <label className="flex items-center justify-between gap-2 text-xs">
-        {beastOf(human.empire).name}
+        <span className="inline-flex items-center gap-1">
+          <UnitMark kind="beast" beastSrc={BEAST_SRC[beastOf(human.empire).id]} beastName={beastOf(human.empire).name} />
+          {beastOf(human.empire).name}
+        </span>
         <input
           className="flex-1"
           type="range"
@@ -309,7 +345,10 @@ export function ActionSheet({
         </span>
       </label>
       <label className="flex items-center justify-between gap-2 text-xs">
-        Dragons
+        <span className="inline-flex items-center gap-1">
+          <UnitMark kind="dragon" />
+          Dragons
+        </span>
         <input
           className="flex-1"
           type="range"
@@ -372,10 +411,20 @@ export function OccupySheet({
   const canSailHome = (to.ships ?? 0) > 0 && seaNeighbors(toId).includes(fromId);
   const [sailHome, setSailHome] = useState(canSailHome);
   const beastName = beastOf(state.players[0]!.empire).name;
+  const beastSrc = BEAST_SRC[beastOf(state.players[0]!.empire).id];
   const sending = levy + knights + dragons + beasts;
   return (
     <div className="panel action-sheet space-y-1.5">
-      <p className="text-[10px] tracking-[0.16em] text-muted uppercase">Occupy {toMeta.name}</p>
+      <div className="flex items-center gap-2">
+        <img src={seatArt(state, toId)} alt="" className="host-portrait is-lg object-contain" />
+        <div className="min-w-0">
+          <p className="text-[10px] tracking-[0.16em] text-muted uppercase">Occupy</p>
+          <p className="font-display text-sm tracking-wide">{toMeta.name}</p>
+        </div>
+        {to.castle ? <WorkMark kind="walls" /> : null}
+        {to.port ? <WorkMark kind="port" /> : null}
+      </div>
+      <HostStrip levy={to.levy} knights={to.knights} dragons={to.dragons} beasts={to.beasts ?? 0} beastSrc={beastSrc} beastName={beastName} />
       <div className="grid grid-cols-2 gap-1 rounded-[var(--radius-sm)] border border-border p-0.5">
         <button
           type="button"
@@ -402,7 +451,10 @@ export function OccupySheet({
             <span className="text-muted"> · rest stay</span>
           </p>
           <label className="flex items-center justify-between gap-2 text-xs">
-            Men
+            <span className="inline-flex items-center gap-1">
+              <UnitMark kind="levy" />
+              Men
+            </span>
             <input
               className="flex-1"
               type="range"
@@ -419,7 +471,10 @@ export function OccupySheet({
             </span>
           </label>
           <label className="flex items-center justify-between gap-2 text-xs">
-            Knights
+            <span className="inline-flex items-center gap-1">
+              <UnitMark kind="knight" />
+              Knights
+            </span>
             <input
               className="flex-1"
               type="range"
@@ -436,7 +491,10 @@ export function OccupySheet({
             </span>
           </label>
           <label className="flex items-center justify-between gap-2 text-xs">
-            {beastName}
+            <span className="inline-flex items-center gap-1">
+              <UnitMark kind="beast" beastName={beastName} beastSrc={beastSrc} />
+              {beastName}
+            </span>
             <input
               className="flex-1"
               type="range"
@@ -453,7 +511,10 @@ export function OccupySheet({
             </span>
           </label>
           <label className="flex items-center justify-between gap-2 text-xs">
-            Dragons
+            <span className="inline-flex items-center gap-1">
+              <UnitMark kind="dragon" />
+              Dragons
+            </span>
             <input
               className="flex-1"
               type="range"
@@ -477,6 +538,7 @@ export function OccupySheet({
                 disabled={sending < 1}
                 onChange={(e) => setSailHome(e.target.checked)}
               />
+              <WorkMark kind="port" />
               Sail the keel home with them
             </label>
           ) : null}
@@ -508,9 +570,13 @@ export function OccupySheet({
   );
 }
 
-function hostLine(force: { levy: number; knights: number; dragons: number; beasts?: number }, beastName: string) {
-  const beasts = force.beasts ?? 0;
-  return `Men ${force.levy} · Knights ${force.knights} · ${beastName} ${beasts} · Dragons ${force.dragons}`;
+function seatArt(state: GameState, id: string) {
+  const t = state.territories[id]!;
+  const founder = (Object.entries(CAPITOL) as [EmpireId, string][]).find(([, cap]) => cap === id)?.[0];
+  if (founder) return CAPITAL_SRC[founder];
+  if (t.owner === "barbarian") return PROP_SRC.camp;
+  if (t.castle) return PROP_SRC.city;
+  return PROP_SRC.town;
 }
 
 export function AttackPreview({
@@ -545,6 +611,8 @@ export function AttackPreview({
   const def = defenseStrength(dest, defBeast?.def ?? 0);
   const atkBeastName = atkBeast?.name ?? "Beasts";
   const defBeastName = defBeast?.name ?? "Beasts";
+  const atkBeastSrc = atkBeast ? BEAST_SRC[atkBeast.id] : null;
+  const defBeastSrc = defBeast ? BEAST_SRC[defBeast.id] : null;
   const friendly = dest.owner === 0;
   const defender =
     dest.owner === "barbarian"
@@ -552,31 +620,55 @@ export function AttackPreview({
       : empireOf(state.players[dest.owner]!.empire).name;
   return (
     <div className="panel action-sheet space-y-2">
-      <p className="text-xs tracking-[0.16em] text-muted uppercase">{friendly ? "Move host" : "Attack preview"}</p>
-      <p className="font-display text-lg text-fg">
-        {fromMeta.name} → {toMeta.name}
-      </p>
+      <div className="flex items-center gap-2">
+        <img src={seatArt(state, fromId)} alt="" className="host-portrait is-lg object-contain" />
+        <p className="min-w-0 flex-1 font-display text-base leading-tight text-fg">
+          {fromMeta.name}
+          <span className="mx-1.5 text-muted">→</span>
+          {toMeta.name}
+        </p>
+        <img src={seatArt(state, toId)} alt="" className="host-portrait is-lg object-contain" />
+      </div>
+      <p className="text-[10px] tracking-[0.16em] text-muted uppercase">{friendly ? "Move host" : "Attack preview"}</p>
       {friendly ? (
-        <div className="space-y-1 text-sm">
-          <p className="text-fg">{hostLine(force, atkBeastName)}</p>
+        <div className="space-y-1.5 text-sm">
+          <HostStrip large levy={levy} knights={knights} dragons={dragons} beasts={beasts} beastSrc={atkBeastSrc} beastName={atkBeastName} />
           <p className="text-xs text-muted">
             Strength {atk} · joins the {standing(dest)} already in {toMeta.name}.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <p className="text-xs tracking-[0.14em] text-muted uppercase">Attackers</p>
-            <p className="mt-1 text-fg">{hostLine(force, atkBeastName)}</p>
+          <div className="space-y-1.5">
+            <p className="text-[10px] tracking-[0.14em] text-muted uppercase">Attackers</p>
+            <HostStrip large levy={levy} knights={knights} dragons={dragons} beasts={beasts} beastSrc={atkBeastSrc} beastName={atkBeastName} />
             <p className="text-xs text-muted">Attack {atk}</p>
           </div>
-          <div>
-            <p className="text-xs tracking-[0.14em] text-muted uppercase">Defenders</p>
-            <p className="mt-1 text-fg">{defender}</p>
-            <p className="text-xs text-muted">{hostLine(dest, defBeastName)}</p>
-            <p className="text-xs text-muted">
+          <div className="space-y-1.5">
+            <p className="text-[10px] tracking-[0.14em] text-muted uppercase">Defenders</p>
+            <p className="text-xs text-fg">{defender}</p>
+            <HostStrip
+              large
+              levy={dest.levy}
+              knights={dest.knights}
+              dragons={dest.dragons}
+              beasts={dest.beasts ?? 0}
+              beastSrc={defBeastSrc}
+              beastName={defBeastName}
+            />
+            <p className="flex flex-wrap items-center gap-1 text-xs text-muted">
               Defence {def}
-              {dest.castle ? " · walls" : dest.owner === "barbarian" ? " · camp" : " · city"}
+              {dest.castle ? (
+                <>
+                  <WorkMark kind="walls" /> walls
+                </>
+              ) : dest.owner === "barbarian" ? (
+                <>
+                  <img src={PROP_SRC.camp} alt="" className="hud-icon" /> camp
+                </>
+              ) : (
+                " city"
+              )}
             </p>
           </div>
         </div>
@@ -590,9 +682,9 @@ export function AttackPreview({
           </Button>
         </div>
         <div className="flex items-center gap-1">
-          <Hint text={friendly ? "Move the host into this city." : "Resolve the fight with the attacking host shown."} />
+          <Hint text={friendly ? "Move the host into this city." : "Open the field. Choose each unit to strike; survivors rest until the rest of the host has gone."} />
           <Button size="md" className="flex-1" onClick={onContinue}>
-            {friendly ? "Move" : "Continue"}
+            {friendly ? "Move" : "To the field"}
           </Button>
         </div>
       </div>

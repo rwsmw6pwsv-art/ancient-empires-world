@@ -46,18 +46,18 @@
   }
 }
 
-.empire-atlantis, .house-0 { --house: #1aa6a0; }
-.empire-lumuria, .house-1 { --house: #db2777; }
-.empire-eldorado, .house-2 { --house: #c17f3a; }
-.empire-aztec, .house-3 { --house: #c1121f; }
-.empire-asgard, .house-4 { --house: #5ec8e8; }
-.empire-tartaria, .house-5 { --house: #1d4ed8; }
-.empire-egypt, .house-6 { --house: #e8b86d; }
-.empire-babylon, .house-7 { --house: #7b2d8e; }
-.empire-cape, .house-8 { --house: #16a34a; }
-.empire-patagonia, .house-9 { --house: #3f5c4a; }
-.empire-gondwana, .house-10 { --house: #e07a5f; }
-.empire-thule, .house-11 { --house: #5a7ea0; }
+.empire-atlantis, .house-0 { --house: #2ad4cc; }
+.empire-lumuria, .house-1 { --house: #f43f9a; }
+.empire-eldorado, .house-2 { --house: #f0a33c; }
+.empire-aztec, .house-3 { --house: #ef233c; }
+.empire-asgard, .house-4 { --house: #6fe0ff; }
+.empire-tartaria, .house-5 { --house: #3b82f6; }
+.empire-egypt, .house-6 { --house: #f5c542; }
+.empire-babylon, .house-7 { --house: #c084fc; }
+.empire-cape, .house-8 { --house: #22c55e; }
+.empire-patagonia, .house-9 { --house: #5d9b72; }
+.empire-gondwana, .house-10 { --house: #ff8a65; }
+.empire-thule, .house-11 { --house: #7eb6d9; }
 
 .house-swatch {
   background: var(--house);
@@ -65,6 +65,8 @@
 
 .map-relief {
   pointer-events: none;
+  image-rendering: auto;
+  filter: saturate(1.28) contrast(1.08) brightness(1.05);
 }
 
 svg.touch-none {
@@ -85,13 +87,14 @@ svg.touch-none:active {
 
 .map-land.is-owned {
   fill: var(--house);
-  fill-opacity: 0.58;
-  mix-blend-mode: multiply;
+  fill-opacity: 0.7;
+  mix-blend-mode: color;
 }
 
 .map-land.is-barbarian {
-  fill: #6e6c68;
-  fill-opacity: 0.36;
+  fill: #c4a574;
+  fill-opacity: 0.22;
+  mix-blend-mode: color;
 }
 
 .map-border {
@@ -103,18 +106,19 @@ svg.touch-none:active {
 
 .map-border.is-owned {
   stroke: var(--house);
-  stroke-width: 2.8;
+  stroke-width: 3.2;
 }
 
 .map-border.is-barbarian {
-  stroke: #8e8c88;
-  stroke-width: 1.4;
+  stroke: #d2b48c;
+  stroke-width: 1.2;
+  opacity: 0.7;
 }
 
 .map-border.is-target {
-  stroke: #e7d7a8;
-  stroke-width: 2;
-  stroke-dasharray: 5 4;
+  stroke: #ffd56a;
+  stroke-width: 2.4;
+  stroke-dasharray: 7 6;
 }
 
 .map-border.is-selected {
@@ -150,20 +154,20 @@ svg.touch-none:active {
 }
 
 .map-land.is-selected {
-  fill: #ffffff;
-  fill-opacity: 0.4;
-  mix-blend-mode: normal;
+  fill: var(--house, #ffe08a);
+  fill-opacity: 0.42;
+  mix-blend-mode: overlay;
   stroke: none;
   filter: none;
 }
 
 .map-land.is-barbarian.is-selected {
-  fill: #ffffff;
+  fill: #ffe08a;
   fill-opacity: 0.4;
 }
 
 .map-ocean {
-  fill: color-mix(in oklab, #d8efe8 70%, transparent);
+  fill: #9ee7d8;
   font-family: var(--font-display);
   letter-spacing: 0.18em;
   pointer-events: none;
@@ -172,6 +176,22 @@ svg.touch-none:active {
 .map-markers,
 .map-marker {
   pointer-events: none;
+}
+
+.map-marker {
+  filter: saturate(1.35) contrast(1.12) brightness(1.06);
+}
+
+.map-seat-glow {
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.7;
+}
+
+.map-resource-disc {
+  pointer-events: none;
+  stroke: #1a1410;
+  stroke-width: 0.7;
 }
 
 .map-road {
@@ -226,14 +246,480 @@ svg.touch-none:active {
   letter-spacing: 0.02em;
 }
 
+.map-vignette {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 90px 24px rgb(12 11 10 / 0.55);
+  z-index: 2;
+}
+
+.map-shimmer {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0.28;
+  background: linear-gradient(
+    115deg,
+    transparent 36%,
+    rgb(232 244 248 / 0.12) 48%,
+    transparent 62%
+  );
+  background-size: 220% 100%;
+  animation: mapShimmer 16s linear infinite;
+  mix-blend-mode: soft-light;
+}
+
+.map-border.is-target {
+  stroke-dasharray: 7 6;
+  animation: marchDash 0.9s linear infinite;
+}
+
+.map-land.is-selected {
+  animation: selGlow 2.2s ease-in-out infinite;
+}
+
+.map-land.is-captured {
+  animation: captureFlash 0.7s ease-out;
+}
+
+.map-cloud {
+  fill: rgb(255 255 255 / 0.045);
+  pointer-events: none;
+}
+
+.map-cloud-a {
+  animation: cloudDrift 48s linear infinite;
+}
+
+.map-cloud-b {
+  animation: cloudDrift 72s linear infinite reverse;
+}
+
+.map-cloud-c {
+  animation: cloudDrift 56s linear infinite;
+}
+
+.map-march {
+  fill: none;
+  stroke: #e7d7a8;
+  stroke-width: 1.6;
+  stroke-dasharray: 6 5;
+  pointer-events: none;
+  animation: marchDash 0.7s linear infinite;
+}
+
+.map-march-head {
+  fill: #e7d7a8;
+  pointer-events: none;
+}
+
+.marker-live {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: mapBob 2.6s ease-in-out infinite;
+}
+
+@keyframes mapShimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+@keyframes marchDash {
+  to {
+    stroke-dashoffset: -26;
+  }
+}
+
+@keyframes selGlow {
+  0%,
+  100% {
+    fill-opacity: 0.34;
+  }
+  50% {
+    fill-opacity: 0.52;
+  }
+}
+
+@keyframes captureFlash {
+  0% {
+    fill: #fff6d2;
+    fill-opacity: 0.72;
+  }
+  100% {
+    fill-opacity: 0.4;
+  }
+}
+
+@keyframes cloudDrift {
+  from {
+    transform: translateX(-40px);
+  }
+  to {
+    transform: translateX(80px);
+  }
+}
+
+@keyframes mapBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+
+.battle-root {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.75rem;
+}
+
+.battle-terrain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.85) brightness(0.55);
+}
+
+.battle-dust {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 20% 80%, rgb(232 200 140 / 0.12), transparent 40%),
+    radial-gradient(circle at 80% 30%, rgb(255 255 255 / 0.08), transparent 35%);
+  animation: dustDrift 18s ease-in-out infinite alternate;
+}
+
+.battle-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 40%, rgb(12 11 10 / 0.78) 100%);
+}
+
+.battle-sheet {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 42rem;
+  max-height: 92dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem 1.1rem;
+  background: color-mix(in oklab, var(--color-surface) 78%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(8px);
+}
+
+.battle-sheet.is-shake {
+  animation: battleShake 0.35s ease-out;
+}
+
+.battle-card {
+  position: relative;
+  display: flex;
+  min-height: 5.5rem;
+  min-width: 5.6rem;
+  flex: 1 1 5.6rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-raised);
+  color: var(--color-fg);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    opacity 200ms ease,
+    filter 200ms ease;
+}
+
+.battle-card.is-picked {
+  border-color: var(--color-accent);
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.battle-card.is-rest {
+  opacity: 0.45;
+  filter: grayscale(0.35);
+}
+
+.battle-card.is-lunge {
+  animation: unitLunge 0.42s ease-out;
+}
+
+.battle-card.is-hit {
+  animation: unitHit 0.42s ease-out;
+}
+
+.battle-card.is-dead {
+  animation: unitFall 0.45s ease-in forwards;
+}
+
+.battle-portrait {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: portraitIdle 3.2s ease-in-out infinite;
+}
+
+.battle-card-meta {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding: 0.3rem 0.35rem 0.4rem;
+  background: linear-gradient(transparent, rgb(12 11 10 / 0.82));
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.battle-slash {
+  pointer-events: none;
+  position: absolute;
+  width: 7rem;
+  height: 7rem;
+  object-fit: contain;
+  mix-blend-mode: screen;
+  animation: slashPop 0.4s ease-out forwards;
+  z-index: 3;
+}
+
+.battle-pop {
+  position: absolute;
+  top: 0.4rem;
+  z-index: 4;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: #f2e2b6;
+  text-shadow: 0 1px 0 #0c0b0a;
+  animation: dmgPop 0.7s ease-out forwards;
+  pointer-events: none;
+}
+
+.battle-walls-fill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 280ms ease;
+}
+
+@keyframes dustDrift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-18px, -10px, 0);
+  }
+}
+
+@keyframes battleShake {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-5px, 2px);
+  }
+  50% {
+    transform: translate(4px, -2px);
+  }
+  75% {
+    transform: translate(-2px, 1px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes unitLunge {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    transform: translateY(-14px) scale(1.06);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes unitHit {
+  0% {
+    filter: brightness(2);
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(7px);
+  }
+  100% {
+    filter: brightness(1);
+    transform: translateX(0);
+  }
+}
+
+@keyframes unitFall {
+  to {
+    opacity: 0;
+    transform: translateY(12px) rotate(-6deg);
+    filter: grayscale(1);
+  }
+}
+
+@keyframes portraitIdle {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.04) translateY(-2px);
+  }
+}
+
+@keyframes slashPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-12deg);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25) rotate(8deg);
+  }
+}
+
+@keyframes dmgPop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.7);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-18px) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-shimmer,
+  .map-border.is-target,
+  .map-land.is-selected,
+  .map-cloud-a,
+  .map-cloud-b,
+  .map-cloud-c,
+  .map-march,
+  .marker-live,
+  .battle-dust,
+  .battle-portrait,
+  .battle-card.is-lunge,
+  .battle-card.is-hit,
+  .battle-sheet.is-shake,
+  .title-dragon {
+    animation: none !important;
+  }
+}
+
+@media (min-width: 640px) {
+  .battle-root {
+    align-items: center;
+  }
+  .battle-sheet {
+    padding: 1.25rem;
+  }
+}
+
 input[type="range"] {
   accent-color: var(--color-accent);
+}
+
+.title-dragon {
+  pointer-events: none;
+  position: absolute;
+  right: -4%;
+  top: 6%;
+  width: min(46vw, 420px);
+  height: auto;
+  opacity: 0.55;
+  mask-image: linear-gradient(90deg, transparent 0%, #000 28%, #000 80%, transparent 100%);
+  animation: portraitIdle 6s ease-in-out infinite;
+  filter: saturate(1.05) contrast(1.08);
 }
 
 .panel {
   background: color-mix(in oklab, var(--color-surface) 92%, transparent);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+}
+
+.res-gold { color: #f0c14a; }
+.res-silver { color: #c9d6e2; }
+.res-wood { color: #5cbf4a; }
+.res-stone { color: #d2b48c; }
+.res-metal { color: #7eb8d0; }
+.res-food { color: #e2d15a; }
+.unit-levy { color: #e8d5b0; }
+.unit-knight { color: #e8b84a; }
+.unit-dragon { color: #ff8a4a; }
+.unit-beast { color: #f07167; }
+.act-train { color: #e8b84a; }
+.act-march { color: #5ec8e8; }
+.act-build { color: #d2b48c; }
+
+.hud-icon {
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: saturate(1.4) contrast(1.1);
+}
+
+.hud-icon-knight {
+  width: 1.4rem;
+  height: 1.4rem;
+  object-fit: contain;
+  background: transparent;
+  filter: saturate(1.2) contrast(1.15);
+}
+
+.host-portrait {
+  width: 1.75rem;
+  height: 1.75rem;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: color-mix(in oklab, var(--color-raised) 80%, transparent);
+}
+
+.host-portrait.is-lg {
+  width: 2.4rem;
+  height: 2.4rem;
 }
 
 .action-sheet {

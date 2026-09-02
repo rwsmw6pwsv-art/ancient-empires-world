@@ -77,6 +77,15 @@ export const TERRAIN_LABEL: Record<TerrainId, string> = {
   mediterranean: "olive hills",
 };
 
+export const RESOURCE_TINT: Record<ResourceId, string> = {
+  gold: "#f0c14a",
+  silver: "#d5e2ee",
+  wood: "#5cbf4a",
+  stone: "#d2b48c",
+  metal: "#7eb8d0",
+  food: "#e2d15a",
+};
+
 export const RESOURCE_LABEL: Record<ResourceId, string> = {
   gold: "gold",
   silver: "silver",
@@ -156,16 +165,27 @@ export const TERRAIN_TEXTURE: Record<TerrainId, string> = {
   mediterranean: "/map/terrain/grass.jpg",
 };
 
+export const BATTLE_UNIT_SRC: Record<"levy" | "knight" | "dragon", string> = {
+  levy: "/map/battle/levy.jpg",
+  knight: "/map/battle/knight.jpg",
+  dragon: "/map/battle/dragon.jpg",
+};
+
+export const BATTLE_SLASH_SRC = "/map/battle/slash.jpg";
+
 export const PROP_SRC = {
   city: "/map/props/city.png",
+  town: "/map/props/town.png",
   castle: "/map/props/castle.png",
-  camp: "/map/props/camp.svg",
+  camp: "/map/props/camp.png",
   walls: "/map/props/walls.png",
   port: "/map/props/port.png",
   mine: "/map/props/mine.png",
   market: "/map/props/market.png",
   road: "/map/props/road.svg",
-  farm: "/map/props/food.svg",
+  farm: "/map/props/farm.png",
+  dragon: "/map/props/dragon.png",
+  knight: "/map/props/knight.png",
   gold: "/map/props/gold.png",
   silver: "/map/props/silver.svg",
   wood: "/map/props/wood.png",

@@ -9,43 +9,48 @@ function ac(): AudioContext | null {
   return ctx;
 }
 
-export type SfxKind = "tap" | "tick" | "ok";
+export type SfxKind = "tap" | "tick" | "ok" | "clash" | "hit" | "rout";
 
 export function sfx(kind: SfxKind = "tap") {
   try {
     const c = ac();
     if (!c) return;
     const t = c.currentTime;
-    const o = c.createOscillator();
-    const g = c.createGain();
-    o.connect(g);
-    g.connect(c.destination);
-    if (kind === "tick") {
-      o.type = "square";
-      o.frequency.setValueAtTime(640, t);
-      g.gain.setValueAtTime(0.03, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    const beep = (type: OscillatorType, freq: number, dur: number, vol: number, end?: number) => {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.connect(g);
+      g.connect(c.destination);
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t);
+      if (end) o.frequency.exponentialRampToValueAtTime(end, t + dur);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
       o.start(t);
-      o.stop(t + 0.045);
+      o.stop(t + dur + 0.02);
+    };
+    if (kind === "tick") {
+      beep("square", 640, 0.04, 0.03);
       return;
     }
     if (kind === "ok") {
-      o.type = "triangle";
-      o.frequency.setValueAtTime(520, t);
-      o.frequency.exponentialRampToValueAtTime(880, t + 0.08);
-      g.gain.setValueAtTime(0.07, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-      o.start(t);
-      o.stop(t + 0.13);
+      beep("triangle", 520, 0.12, 0.07, 880);
       return;
     }
-    o.type = "triangle";
-    o.frequency.setValueAtTime(880, t);
-    o.frequency.exponentialRampToValueAtTime(420, t + 0.07);
-    g.gain.setValueAtTime(0.07, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
-    o.start(t);
-    o.stop(t + 0.1);
+    if (kind === "clash") {
+      beep("sawtooth", 180, 0.16, 0.05, 70);
+      beep("square", 740, 0.08, 0.03, 220);
+      return;
+    }
+    if (kind === "hit") {
+      beep("triangle", 240, 0.12, 0.06, 90);
+      return;
+    }
+    if (kind === "rout") {
+      beep("sine", 420, 0.28, 0.05, 160);
+      return;
+    }
+    beep("triangle", 880, 0.1, 0.07, 420);
   } catch {
     /* audio optional */
   }

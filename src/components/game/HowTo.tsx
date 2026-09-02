@@ -26,6 +26,10 @@ const STEPS = [
     body: "A finished port lets you lay keels. Rank I holds two, rank II four, rank III six. A beach without a port berths one arriving keel. Each ship sails with the host across water and docks at the landing. After the fight you may leave it there or send it home with part of the column. A wiped landing loses the keel. Two keels, two sea strikes in the same watch from that shore. Each ship also pays two trade gold. Nord and Sahul wake with a keel already in harbour.",
   },
   {
+    title: "The field",
+    body: "When you attack — or when a rival marches on you — the fight opens on the field. Each kind stands as one host: men, knights, beasts, dragons. Tap yours, then a mark. They duel; the mark answers once this round. A live striker rests until the rest of your host has gone, then the enemy volleys back. Men hold 1 wound, knights 2, beasts 3, dragons 5. Walls are a pool you chew before the garrison. Jungle favours beasts, ice favours Nord, mountains favour the defence. Odds show on the mark. When a host falls below half it breaks and flees. Captains can take the volley for you.",
+  },
+  {
     title: "Victory",
     body: "Hold five continents and you win immediately. Otherwise the age closes on turn 200: the court with the most continents takes the crown, most provinces if continents are tied. Last throne standing also wins.",
   },
