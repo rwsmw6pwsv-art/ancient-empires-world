@@ -1,294 +1,648 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Swords } from "lucide-react";
-import { empireOf } from "@/lib/game/empires";
 import {
-  BATTLE_SLASH_SRC,
   BATTLE_UNIT_SRC,
   BEAST_SRC,
+  PROP_SRC,
+  SIEGE_SRC,
   TERRAIN_TEXTURE,
   beastOf,
-  landscapeOf,
 } from "@/lib/game/landscape";
 import {
-  battleWinner,
-  living,
-  livingCount,
-  readyFighters,
-  strikeOdds,
-  type BattleStack,
-  type BattleState,
-} from "@/lib/game/battle";
-import type { GameState, UnitKind } from "@/lib/game/types";
-import { TERRITORY_BY_ID } from "@/lib/game/world";
+  RAID_H,
+  RAID_W,
+  autoDeployAll,
+  canDeployAt,
+  cloneRaid,
+  deployTroop,
+  pickRaidKind,
+  raidKindsLeft,
+  raidOutcome,
+  raidWinner,
+  stepRaid,
+  type RaidKind,
+  type RaidState,
+} from "@/lib/game/raid";
+import type { GameState } from "@/lib/game/types";
+import { SIEGE_LABEL, UNIT_LABEL_PLURAL } from "@/lib/game/types";
 import { Button } from "@/components/ui/button";
 import { sfx } from "@/lib/sfx";
 import { cn } from "@/lib/utils";
+import type { RaidOutcome } from "@/lib/game/raid";
 
-function portraitFor(kind: UnitKind, beastSrc: string | null) {
-  if (kind === "beast") return beastSrc;
-  if (kind === "levy") return BATTLE_UNIT_SRC.levy;
-  if (kind === "knight") return BATTLE_UNIT_SRC.knight;
-  return BATTLE_UNIT_SRC.dragon;
+const KIND_ORDER: RaidKind[] = ["ram", "tower", "ladder", "catapult", "levy", "bowman", "knight", "beast", "dragon"];
+
+function kindLabel(kind: RaidKind, beastName: string) {
+  if (kind === "beast") return beastName;
+  if (kind === "levy" || kind === "bowman" || kind === "knight" || kind === "dragon") return UNIT_LABEL_PLURAL[kind];
+  return SIEGE_LABEL[kind];
+}
+
+function stockOf(raid: RaidState, kind: RaidKind) {
+  if (kind === "levy") return raid.stock.levy;
+  if (kind === "bowman") return raid.stock.bowmen ?? 0;
+  if (kind === "knight") return raid.stock.knights;
+  if (kind === "dragon") return raid.stock.dragons;
+  if (kind === "beast") return raid.stock.beasts;
+  if (kind === "ram") return raid.stock.rams;
+  if (kind === "catapult") return raid.stock.catapults;
+  if (kind === "ladder") return raid.stock.ladders;
+  return raid.stock.towers;
+}
+
+function loadImg(src: string) {
+  const img = new Image();
+  img.src = src;
+  return img;
 }
 
 export function BattleScreen({
   state,
   battle,
-  onStrike,
-  onAuto,
   onFinish,
   onCancel,
 }: {
   state: GameState;
-  battle: BattleState;
-  onStrike: (attackerId: string, targetId: string) => void;
-  onAuto: () => void;
-  onFinish: () => void;
-  onCancel: () => void;
+  battle: RaidState;
+  onFinish: (outcome: RaidOutcome) => void;
+  onCancel: (outcome: RaidOutcome | null) => void;
 }) {
-  const [picked, setPicked] = useState<string | null>(null);
-  const [fx, setFx] = useState<{ atk: string; def: string; pop: string } | null>(null);
-  const [shake, setShake] = useState(false);
-  const winner = battleWinner(battle);
-  const yours = living(battle.stacks, battle.humanSide);
-  const foes = living(battle.stacks, battle.humanSide === "atk" ? "def" : "atk");
-  const ready = readyFighters(battle);
-  const fromMeta = TERRITORY_BY_ID[battle.fromId]!;
-  const toMeta = TERRITORY_BY_ID[battle.toId]!;
+  const initial = useRef(battle);
+  const raidRef = useRef<RaidState>(cloneRaid(battle));
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [hud, setHud] = useState(() => snapshot(raidRef.current));
+  const [shake, setShake] = useState(0);
+  const reduced = useRef(false);
+  const imgs = useRef<Record<string, HTMLImageElement>>({});
+  const lastSfx = useRef({ stars: 0, keep: false });
+
   const from = state.territories[battle.fromId]!;
-  const to = state.territories[battle.toId]!;
-  const atkHouse = from.owner === "barbarian" ? null : empireOf(state.players[from.owner]!.empire);
-  const defHouse = to.owner === "barbarian" ? null : empireOf(state.players[to.owner]!.empire);
-  const yourHouse = battle.humanSide === "atk" ? atkHouse : defHouse;
-  const foeHouse = battle.humanSide === "atk" ? defHouse : atkHouse;
-  const yourBeast = yourHouse ? beastOf(yourHouse.id) : null;
-  const foeBeast = foeHouse ? beastOf(foeHouse.id) : null;
-  const striker = yours.find((s) => s.id === picked) ?? null;
-  const terrain = landscapeOf(battle.toId).terrain;
-  const ground = TERRAIN_TEXTURE[terrain] ?? TERRAIN_TEXTURE.grass;
-  const lastLog = battle.log[battle.log.length - 1];
-  const routed = battle.routed
-    ? battle.routed === battle.humanSide
-      ? "Your host breaks."
-      : "They break and flee."
-    : null;
+  const atkBeast = from.owner === "barbarian" ? null : beastOf(state.players[from.owner]!.empire);
+  const beastSrc = atkBeast ? BEAST_SRC[atkBeast.id] : null;
 
   useEffect(() => {
-    if (!fx) return;
-    const t = window.setTimeout(() => setFx(null), 520);
-    return () => window.clearTimeout(t);
-  }, [fx]);
+    reduced.current = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    const bag = imgs.current;
+    bag.levy = loadImg(BATTLE_UNIT_SRC.levy);
+    bag.bowman = loadImg(BATTLE_UNIT_SRC.bowman);
+    bag.knight = loadImg(BATTLE_UNIT_SRC.knight);
+    bag.dragon = loadImg(BATTLE_UNIT_SRC.dragon);
+    bag.city = loadImg(PROP_SRC.city);
+    bag.camp = loadImg(PROP_SRC.camp);
+    bag.walls = loadImg(PROP_SRC.walls);
+    bag.woodwalls = loadImg(PROP_SRC.woodwalls);
+    bag.woodkeep = loadImg(PROP_SRC.woodkeep);
+    bag.scorpion = loadImg(PROP_SRC.scorpion);
+    bag.ground = loadImg(TERRAIN_TEXTURE[battle.terrain] ?? TERRAIN_TEXTURE.grass);
+    bag.ram = loadImg(SIEGE_SRC.ram);
+    bag.catapult = loadImg(SIEGE_SRC.catapult);
+    bag.ladder = loadImg(SIEGE_SRC.ladder);
+    bag.tower = loadImg(SIEGE_SRC.tower);
+    if (beastSrc) bag.beast = loadImg(beastSrc);
+  }, [battle.terrain, beastSrc]);
 
   useEffect(() => {
-    if (!shake) return;
-    const t = window.setTimeout(() => setShake(false), 360);
-    return () => window.clearTimeout(t);
-  }, [shake]);
-
-  useEffect(() => {
-    if (winner && battle.routed) sfx("rout");
-  }, [winner, battle.routed]);
-
-  function pick(id: string, mine: boolean) {
-    if (winner) return;
-    if (mine) {
-      const f = battle.stacks.find((x) => x.id === id);
-      if (!f || f.exhausted) return;
-      sfx("tick");
-      setPicked(id);
-      return;
+    const raid = raidRef.current;
+    if (raid.humanSide === "def" && raid.phase === "deploy") {
+      autoDeployAll(raid);
+      raid.timeScale = 1.35;
     }
-    if (!picked) return;
-    sfx("clash");
-    setFx({ atk: picked, def: id, pop: lastHitLabel(battle, id) });
-    setShake(true);
-    onStrike(picked, id);
-    setPicked(null);
+  }, []);
+
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+    let hudAcc = 0;
+    const tick = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const raid = raidRef.current;
+      const beforeStars = raid.stars;
+      const beforeKeep = raid.keepDestroyed;
+      stepRaid(raid, dt);
+      if (raid.stars > lastSfx.current.stars) {
+        lastSfx.current.stars = raid.stars;
+        sfx("ok");
+      }
+      if (raid.keepDestroyed && !lastSfx.current.keep) {
+        lastSfx.current.keep = true;
+        sfx("rout");
+      } else if (raid.stars !== beforeStars || raid.keepDestroyed !== beforeKeep) {
+        /* already handled */
+      }
+      setShake(reduced.current ? 0 : raid.trauma);
+      hudAcc += dt;
+      if (hudAcc > 0.12 || raid.phase === "over") {
+        hudAcc = 0;
+        setHud(snapshot(raid));
+      }
+      paint(canvasRef.current, wrapRef.current, raid, imgs.current, reduced.current);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  function onField(clientX: number, clientY: number) {
+    const raid = raidRef.current;
+    if (raid.humanSide !== "atk" || raid.phase === "over") return;
+    const map = fieldMap(canvasRef.current);
+    if (!map) return;
+    const x = (clientX - map.left) / map.s - map.ox / map.s;
+    const y = (clientY - map.top) / map.s - map.oy / map.s;
+    const kind = raid.selected;
+    if (!kind) return;
+    if (deployTroop(raid, kind, x, y)) {
+      sfx("tap");
+      setHud(snapshot(raid));
+    } else if (!canDeployAt(raid, x, y)) {
+      sfx("tick");
+    }
   }
 
+  const winner = hud.phase === "over" ? raidWinner(raidRef.current) : null;
+  const watching = battle.humanSide === "def";
+  const kinds = KIND_ORDER.filter((k) => stockOf(initial.current, k) > 0 || stockOf(raidRef.current, k) > 0);
+
   return (
-    <div className="battle-root">
-      <img src={ground} alt="" className="battle-terrain" />
+    <div className="battle-root raid-root fixed inset-0 z-50">
+      <img src={TERRAIN_TEXTURE[battle.terrain] ?? TERRAIN_TEXTURE.grass} alt="" className="battle-terrain" />
       <div className="battle-dust" />
       <div className="battle-vignette" />
-      <div className={cn("battle-sheet", shake && "is-shake")}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] tracking-[0.18em] text-muted uppercase">The field · {toMeta.name}</p>
-            <h2 className="font-display text-xl text-fg">
-              {fromMeta.name} → {toMeta.name}
+      <div
+        className={cn("raid-stage", shake > 0.04 && !reduced.current && "is-shake")}
+        style={
+          shake > 0.04 && !reduced.current
+            ? { transform: `translate(${(shake * shake * 10).toFixed(1)}px, ${(shake * 6).toFixed(1)}px)` }
+            : undefined
+        }
+      >
+        <header className="raid-top">
+          <div className="min-w-0">
+            <p className="text-[10px] tracking-[0.18em] text-muted uppercase">The field · {battle.toName}</p>
+            <h2 className="font-display text-lg text-fg sm:text-xl">
+              {battle.fromName} → {battle.toName}
             </h2>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-0.5 truncate text-xs text-muted">
               {winner
-                ? (routed ?? (winner === battle.humanSide ? "The field is yours." : "The host is broken."))
-                : picked
-                  ? "Tap an enemy to strike. They answer once."
-                  : "Tap a host, then a mark. Survivors rest; then they volley back."}
+                ? winner === battle.humanSide
+                  ? watching
+                    ? "The keep holds."
+                    : "The keep is yours."
+                  : watching
+                    ? "The keep is lost."
+                    : "The assault breaks."
+                : watching
+                  ? "They deploy around the walls. Defences fire on their own."
+                  : hud.phase === "deploy"
+                    ? "Tap a host, then tap the grass outside the walls."
+                    : "Troops path on their own. Smash the keep to take the land."}
             </p>
           </div>
-          <Swords className="size-5 shrink-0 text-muted" />
-        </div>
-
-        {battle.fortMax > 0 ? (
-          <div className="space-y-1">
-            <p className="text-[10px] tracking-[0.16em] text-muted uppercase">
-              Walls · {battle.fortHp}/{battle.fortMax}
-            </p>
-            <div className="h-1.5 overflow-hidden rounded-full bg-raised">
-              <div
-                className="battle-walls-fill"
-                style={{ width: `${battle.fortMax ? (100 * battle.fortHp) / battle.fortMax : 0}%` }}
-              />
+          <div className="raid-meter">
+            <div className="raid-stars" aria-label={`${hud.stars} stars`}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} className={cn("raid-star", hud.stars > i && "is-lit")} />
+              ))}
             </div>
-          </div>
-        ) : null}
-
-        <HostRow
-          title={foeHouse?.name ?? "Independent tribes"}
-          stacks={foes}
-          count={livingCount(battle.stacks, battle.humanSide === "atk" ? "def" : "atk")}
-          beastSrc={foeBeast ? BEAST_SRC[foeBeast.id] : null}
-          selected={null}
-          striker={striker}
-          fx={fx}
-          onPick={(id) => pick(id, false)}
-          clickable={!winner && Boolean(picked)}
-          enemy
-          walls={battle.humanSide === "atk" && battle.fortHp > 0}
-        />
-
-        <p className="min-h-8 text-center font-display text-sm text-fg">{lastLog}</p>
-
-        <HostRow
-          title={yourHouse?.name ?? "Your host"}
-          stacks={yours}
-          count={livingCount(battle.stacks, battle.humanSide)}
-          beastSrc={yourBeast ? BEAST_SRC[yourBeast.id] : null}
-          selected={picked}
-          striker={null}
-          fx={fx}
-          onPick={(id) => pick(id, true)}
-          clickable={!winner}
-          enemy={false}
-          walls={false}
-        />
-
-        <div className="flex flex-wrap items-center gap-2">
-          {winner ? (
-            <Button className="flex-1" onClick={onFinish}>
-              Leave the field
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant="secondary"
-                className="flex-1"
-                disabled={!ready.length}
+            <p className="font-display text-lg tabular-nums text-fg">{hud.destruction}%</p>
+            <p className="text-[10px] tracking-[0.16em] text-muted uppercase">{fmtTime(hud.timeLeft)}</p>
+            {hud.phase !== "over" && !watching ? (
+              <button
+                type="button"
+                className="raid-speed"
                 onClick={() => {
-                  sfx("clash");
-                  setPicked(null);
-                  setShake(true);
-                  onAuto();
+                  const raid = raidRef.current;
+                  raid.timeScale = raid.timeScale >= 2.9 ? 1 : raid.timeScale >= 1.9 ? 3 : 2;
+                  sfx("tick");
+                  setHud(snapshot(raid));
                 }}
               >
-                Captains, take them
-              </Button>
-              {battle.humanSide === "atk" ? (
-                <Button variant="ghost" onClick={onCancel}>
-                  Fall back
-                </Button>
-              ) : null}
-            </>
+                {hud.timeScale >= 2.9 ? "3×" : hud.timeScale >= 1.9 ? "2×" : "1×"}
+              </button>
+            ) : null}
+          </div>
+        </header>
+
+        <div className="raid-canvas-wrap" ref={wrapRef}>
+          <canvas
+            ref={canvasRef}
+            className="raid-canvas"
+            onPointerDown={(e) => {
+              (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+              onField(e.clientX, e.clientY);
+            }}
+          />
+        </div>
+
+        <div className="raid-dock">
+          {!watching && hud.phase !== "over" ? (
+            <div className="raid-tray">
+              {kinds.map((kind) => {
+                const n = stockOf(raidRef.current, kind);
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    disabled={n < 1}
+                    onClick={() => {
+                      pickRaidKind(raidRef.current, kind);
+                      sfx("tick");
+                      setHud(snapshot(raidRef.current));
+                    }}
+                    className={cn("raid-chip", hud.selected === kind && "is-picked")}
+                  >
+                    <img
+                      src={
+                        kind === "ram" || kind === "catapult" || kind === "ladder" || kind === "tower"
+                          ? SIEGE_SRC[kind]
+                          : kind === "dragon"
+                            ? BATTLE_UNIT_SRC.dragon
+                            : kind === "knight"
+                              ? BATTLE_UNIT_SRC.knight
+                              : kind === "bowman"
+                                ? BATTLE_UNIT_SRC.bowman
+                              : kind === "beast" && beastSrc
+                                ? beastSrc
+                                : BATTLE_UNIT_SRC.levy
+                      }
+                      alt=""
+                      className="raid-chip-art"
+                    />
+                    <span className="raid-chip-name">{kindLabel(kind, battle.beastName)}</span>
+                    <span className="tabular-nums text-muted">{n}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="min-h-6 text-center text-xs text-muted">{hud.log}</p>
           )}
+          <div className="flex flex-wrap items-center gap-2">
+            {hud.phase === "over" ? (
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  sfx("ok");
+                  onFinish(raidOutcome(raidRef.current));
+                }}
+              >
+                Leave the field
+              </Button>
+            ) : (
+              <>
+                {watching ? (
+                  <p className="flex-1 text-xs text-muted">Hold the walls. You do not place a host on defence.</p>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => {
+                      const raid = raidRef.current;
+                      autoDeployAll(raid);
+                      raid.timeScale = 2.4;
+                      sfx("clash");
+                      setHud(snapshot(raid));
+                    }}
+                  >
+                    Captains, take them
+                  </Button>
+                )}
+                {battle.humanSide === "atk" ? (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      const raid = raidRef.current;
+                      if (raid.phase === "deploy") onCancel(null);
+                      else onCancel(raidOutcome(raid));
+                    }}
+                  >
+                    Fall back
+                  </Button>
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
       </div>
+      <Swords className="pointer-events-none absolute right-4 top-4 size-5 text-muted" />
     </div>
   );
 }
 
-function lastHitLabel(battle: BattleState, targetId: string) {
-  const t = battle.stacks.find((s) => s.id === targetId);
-  return t ? `×${t.count}` : "";
+function snapshot(raid: RaidState) {
+  return {
+    phase: raid.phase,
+    stars: raid.stars,
+    destruction: raid.destruction,
+    timeLeft: raid.timeLeft,
+    selected: raid.selected,
+    log: raid.log[raid.log.length - 1] ?? "",
+    timeScale: raid.timeScale,
+  };
 }
 
-function HostRow({
-  title,
-  stacks,
-  count,
-  beastSrc,
-  selected,
-  striker,
-  fx,
-  onPick,
-  clickable,
-  enemy,
-  walls,
-}: {
-  title: string;
-  stacks: BattleStack[];
-  count: number;
-  beastSrc: string | null;
-  selected: string | null;
-  striker: BattleStack | null;
-  fx: { atk: string; def: string; pop: string } | null;
-  onPick: (id: string) => void;
-  clickable: boolean;
-  enemy: boolean;
-  walls: boolean;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <p className="text-[10px] tracking-[0.16em] text-muted uppercase">
-        {title} · {count}
-      </p>
-      {stacks.length === 0 ? (
-        <p className="text-sm text-muted">None stand.</p>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {stacks.map((f) => {
-            const odds = striker ? strikeOdds(striker.atk, f.def) : null;
-            const src = portraitFor(f.kind, beastSrc);
-            return (
-              <button
-                key={f.id}
-                type="button"
-                disabled={!clickable || (f.exhausted && !enemy)}
-                onClick={() => onPick(f.id)}
-                className={cn(
-                  "battle-card",
-                  selected === f.id && "is-picked",
-                  f.exhausted && !enemy && "is-rest",
-                  fx?.atk === f.id && "is-lunge",
-                  fx?.def === f.id && "is-hit",
-                )}
-              >
-                {src ? <img src={src} alt="" className="battle-portrait" /> : null}
-                {fx?.def === f.id ? <img src={BATTLE_SLASH_SRC} alt="" className="battle-slash" /> : null}
-                {fx?.def === f.id ? <span className="battle-pop">{fx.pop}</span> : null}
-                <span className="battle-card-meta">
-                  <span className="block font-display text-xs text-fg">
-                    {f.name} ×{f.count}
-                  </span>
-                  <span className="tabular-nums text-muted">
-                    {f.atk}/{f.def} · {f.hp - f.wounds}/{f.hp}
-                  </span>
-                  {f.exhausted && !enemy ? <span className="block text-muted">rest</span> : null}
-                  {odds ? (
-                    <span
-                      className={cn(
-                        "block",
-                        odds === "likely" ? "text-fg" : odds === "desperate" ? "text-danger" : "text-muted",
-                      )}
-                    >
-                      {walls && odds !== "desperate" ? `${odds} · walls` : odds}
-                    </span>
-                  ) : null}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
+function fmtTime(t: number) {
+  const s = Math.max(0, Math.ceil(t));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function fieldMap(canvas: HTMLCanvasElement | null) {
+  if (!canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  const s = Math.min(rect.width / RAID_W, rect.height / RAID_H);
+  const ox = (rect.width - RAID_W * s) / 2;
+  const oy = (rect.height - RAID_H * s) / 2;
+  return { s, ox, oy, left: rect.left, top: rect.top, w: rect.width, h: rect.height };
+}
+
+function paint(
+  canvas: HTMLCanvasElement | null,
+  wrap: HTMLDivElement | null,
+  raid: RaidState,
+  imgs: Record<string, HTMLImageElement>,
+  reduced: boolean,
+) {
+  if (!canvas || !wrap) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = wrap.clientWidth;
+  const h = Math.max(160, wrap.clientHeight);
+  if (w < 4 || h < 4) return;
+  if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const s = Math.min(w / RAID_W, h / RAID_H);
+  const ox = (w - RAID_W * s) / 2;
+  const oy = (h - RAID_H * s) / 2;
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.scale(s, s);
+  const ground = imgs.ground;
+  if (ground?.complete && ground.naturalWidth) {
+    ctx.drawImage(ground, 0, 0, RAID_W, RAID_H);
+  } else {
+    ctx.fillStyle = "#2a261c";
+    ctx.fillRect(0, 0, RAID_W, RAID_H);
+  }
+  ctx.fillStyle = "rgba(12,11,10,0.18)";
+  ctx.fillRect(0, 0, RAID_W, RAID_H);
+  ctx.fillStyle = "rgba(72, 58, 38, 0.45)";
+  ctx.beginPath();
+  ctx.ellipse(RAID_W / 2, RAID_H / 2, 188, 142, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (raid.phase !== "over" && raid.humanSide === "atk") {
+    ctx.strokeStyle = "rgba(232,220,196,0.22)";
+    ctx.setLineDash([6, 6]);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(RAID_W / 2, RAID_H / 2, 172, 132, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if (raid.phase === "deploy" || (raid.phase === "fight" && raid.humanSide === "atk")) {
+    for (const b of raid.buildings) {
+      if (b.hp <= 0 || b.range < 40) continue;
+      ctx.strokeStyle =
+        b.kind === "air" || b.kind === "scorpion" ? "rgba(90,140,190,0.28)" : b.kind === "archer" ? "rgba(110,150,90,0.25)" : "rgba(180,90,74,0.22)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.range, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  for (const wall of raid.walls) {
+    const frac = wall.hp / wall.max;
+    const wood = (raid.fort ?? 1) === 1 || (raid.fort ?? 1) === 3;
+    if (wall.climb) {
+      ctx.fillStyle = "rgba(196,170,120,0.55)";
+      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+      ctx.strokeStyle = "rgba(232,220,196,0.7)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(wall.x + 3, wall.y + wall.h);
+      ctx.lineTo(wall.x + wall.w / 2, wall.y);
+      ctx.lineTo(wall.x + wall.w - 3, wall.y + wall.h);
+      ctx.stroke();
+    } else if (wall.gate) {
+      ctx.fillStyle = wood ? "rgba(118,74,32,0.95)" : "rgba(156,148,132,0.92)";
+      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+    } else if (wood) {
+      ctx.fillStyle = `rgba(${86 + (1 - frac) * 28}, ${50 - frac * 8}, ${20}, ${0.72 + frac * 0.22})`;
+      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+      ctx.fillStyle = `rgba(58, 34, 14, ${0.55 + frac * 0.3})`;
+      const step = Math.max(5, Math.min(8, Math.max(wall.w, wall.h) / 6));
+      if (wall.w >= wall.h) {
+        for (let x = wall.x + 1; x < wall.x + wall.w - 1; x += step) {
+          ctx.fillRect(x, wall.y - 5, 3.2, wall.h + 7);
+        }
+      } else {
+        for (let y = wall.y + 1; y < wall.y + wall.h - 1; y += step) {
+          ctx.fillRect(wall.x - 5, y, wall.w + 7, 3.2);
+        }
+      }
+    } else {
+      ctx.fillStyle = `rgba(${108 + (1 - frac) * 36}, ${104 - frac * 10}, ${92}, ${0.62 + frac * 0.3})`;
+      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+    }
+  }
+  for (const b of raid.buildings) {
+    if (b.hp <= 0) {
+      ctx.fillStyle = "rgba(20,16,12,0.45)";
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
+    drawBuilding(ctx, b, imgs, raid.camp, raid.fort ?? 1);
+  }
+  for (const u of raid.units) {
+    if (u.hp <= 0) continue;
+    drawUnit(ctx, u, imgs);
+  }
+  ctx.fillStyle = "rgba(232,200,120,0.9)";
+  for (const sh of raid.shots) {
+    ctx.beginPath();
+    ctx.arc(sh.x, sh.y, sh.splash > 0 ? 4 : 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (!reduced) {
+    ctx.fillStyle = "rgba(232,220,196,0.7)";
+    for (const sp of raid.sparks) {
+      ctx.globalAlpha = Math.max(0, sp.life / sp.max);
+      ctx.fillRect(sp.x, sp.y, 2.4, 2.4);
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+function drawBuilding(
+  ctx: CanvasRenderingContext2D,
+  b: RaidState["buildings"][number],
+  imgs: Record<string, HTMLImageElement>,
+  camp: boolean,
+  fort: number,
+) {
+  const wood = fort <= 1 || fort === 3;
+  const img =
+    b.kind === "keep"
+      ? camp
+        ? imgs.camp
+        : fort === 3
+          ? imgs.woodkeep
+          : imgs.city
+      : b.kind === "store"
+        ? imgs.camp
+        : b.kind === "scorpion"
+          ? imgs.scorpion
+          : wood
+            ? imgs.woodwalls
+            : imgs.walls;
+  ctx.save();
+  if (b.flash > 0) ctx.filter = "brightness(1.8)";
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+  ctx.fillStyle =
+    b.kind === "cannon"
+      ? "#4a4338"
+      : b.kind === "archer"
+        ? "#3d4a3a"
+        : b.kind === "air"
+          ? "#3a3f4a"
+          : b.kind === "scorpion"
+            ? "#4a4030"
+          : b.kind === "store"
+            ? "#4a4034"
+            : "#5a4e3c";
+  ctx.fill();
+  if (img?.complete && img.naturalWidth) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r - 1, 0, Math.PI * 2);
+    ctx.clip();
+    const s = b.r * 2.1;
+    ctx.drawImage(img, b.x - s / 2, b.y - s / 2, s, s);
+    ctx.restore();
+  }
+  ctx.restore();
+  const frac = b.hp / b.max;
+  ctx.fillStyle = "rgba(12,11,10,0.7)";
+  ctx.fillRect(b.x - b.r, b.y - b.r - 6, b.r * 2, 3);
+  ctx.fillStyle = frac > 0.45 ? "#cfc6b0" : "#b45a4a";
+  ctx.fillRect(b.x - b.r, b.y - b.r - 6, b.r * 2 * frac, 3);
+  if (b.kind !== "keep" && b.kind !== "store") {
+    ctx.fillStyle = "rgba(232,220,196,0.8)";
+    ctx.font = "8px Palatino, serif";
+    ctx.textAlign = "center";
+    ctx.fillText(b.kind === "cannon" ? "cannon" : b.kind === "archer" ? "archers" : b.kind === "scorpion" ? "scorpion" : "air", b.x, b.y + b.r + 10);
+  }
+}
+
+function drawUnit(ctx: CanvasRenderingContext2D, u: RaidState["units"][number], imgs: Record<string, HTMLImageElement>) {
+  const r = u.radius;
+  ctx.save();
+  if (u.flash > 0) ctx.filter = "brightness(1.9)";
+  if (u.kind === "ram" || u.kind === "catapult" || u.kind === "ladder" || u.kind === "tower") {
+    const img = imgs[u.kind];
+    ctx.beginPath();
+    ctx.arc(u.x, u.y, r + 1, 0, Math.PI * 2);
+    ctx.fillStyle = "#4a3c2c";
+    ctx.fill();
+    if (img?.complete && img.naturalWidth) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(u.x, u.y, r, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(img, u.x - r, u.y - r, r * 2, r * 2);
+      ctx.restore();
+    } else {
+      drawSiege(ctx, u);
+    }
+    ctx.strokeStyle = "rgba(232,220,196,0.7)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(u.x, u.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    const img = u.kind === "beast" ? imgs.beast : imgs[u.kind];
+    ctx.beginPath();
+    ctx.arc(u.x, u.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = u.side === "def" ? "#5a4034" : "#3d4a3a";
+    ctx.fill();
+    if (img?.complete && img.naturalWidth) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(u.x, u.y, r - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(img, u.x - r, u.y - r, r * 2, r * 2);
+      ctx.restore();
+    }
+    ctx.strokeStyle = u.side === "def" ? "rgba(180,90,74,0.8)" : "rgba(207,198,176,0.75)";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+  ctx.restore();
+  const frac = u.hp / u.max;
+  ctx.fillStyle = "rgba(12,11,10,0.7)";
+  ctx.fillRect(u.x - r, u.y + r + 2, r * 2, 2.4);
+  ctx.fillStyle = u.side === "def" ? "#b45a4a" : "#cfc6b0";
+  ctx.fillRect(u.x - r, u.y + r + 2, r * 2 * frac, 2.4);
+}
+
+function drawSiege(ctx: CanvasRenderingContext2D, u: RaidState["units"][number]) {
+  ctx.translate(u.x, u.y);
+  ctx.fillStyle = u.planted ? "#8a7350" : "#6a5840";
+  ctx.strokeStyle = "rgba(232,220,196,0.55)";
+  ctx.lineWidth = 1.2;
+  if (u.kind === "ram") {
+    ctx.beginPath();
+    ctx.moveTo(12, 0);
+    ctx.lineTo(-10, -7);
+    ctx.lineTo(-10, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-6, 8, 3.2, 0, Math.PI * 2);
+    ctx.arc(4, 8, 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = "#3a342c";
+    ctx.fill();
+  } else if (u.kind === "catapult") {
+    ctx.fillRect(-9, -4, 18, 8);
+    ctx.strokeRect(-9, -4, 18, 8);
+    ctx.beginPath();
+    ctx.moveTo(-6, -4);
+    ctx.lineTo(8, -14);
+    ctx.lineTo(4, -4);
+    ctx.closePath();
+    ctx.fill();
+  } else if (u.kind === "ladder") {
+    ctx.strokeStyle = "#cfc6b0";
+    ctx.beginPath();
+    ctx.moveTo(-5, 10);
+    ctx.lineTo(-2, -10);
+    ctx.moveTo(5, 10);
+    ctx.lineTo(2, -10);
+    ctx.stroke();
+    for (let i = 0; i < 4; i++) {
+      const t = i / 3;
+      ctx.beginPath();
+      ctx.moveTo(-5 + t * 3, 10 - t * 20);
+      ctx.lineTo(5 - t * 3, 10 - t * 20);
+      ctx.stroke();
+    }
+  } else {
+    ctx.fillRect(-7, -16, 14, 28);
+    ctx.strokeRect(-7, -16, 14, 28);
+    ctx.fillStyle = "rgba(12,11,10,0.35)";
+    ctx.fillRect(-5, -12, 10, 8);
+  }
 }

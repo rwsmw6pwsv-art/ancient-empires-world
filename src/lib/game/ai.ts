@@ -6,15 +6,19 @@ import {
   buildShip,
   buildRoad,
   buildFarm,
-  constructionBusy,
+  buildSiege,
+  buildScorpion,
+  beginSiege,
+  canRaiseSiege,
+  hasKindJob,
   endTurn,
   forceStrength,
   hostDefense,
   incomeFor,
+  issueMarch,
   legalMarchTargets,
   ownedIds,
   playCard,
-  resolveAttack,
   standing,
   trainUnit,
   upkeepFor,
@@ -22,12 +26,13 @@ import {
   worksRank,
   foodNeed,
   shipsCap,
-  worksDefense,
+  siegeBringOf,
+  siegeTargetOf,
+  fortOf,
 } from "./engine";
-import type { BattleState } from "./battle";
-import { openBattle } from "./battle";
+import { openRaid, type RaidState } from "./raid";
 import type { AiAction, Difficulty, GameState, JobKind, PlayerId, TerritoryState } from "./types";
-import { UNIT_COST, WORKS_CAP, BEAST_WAGE } from "./types";
+import { UNIT_COST, BEAST_WAGE, FORT_CAP, isSiegeKind } from "./types";
 import { TERRITORY_BY_ID, continentTerritories, landNeighbors } from "./world";
 import { empireOf } from "./empires";
 import { beastOf } from "./landscape";
@@ -131,8 +136,9 @@ function garrisonKeep(
   return Math.min(host, need);
 }
 
-function splitSend(t: TerritoryState, keep: number): { levy: number; knights: number; dragons: number; beasts: number } {
+function splitSend(t: TerritoryState, keep: number): { levy: number; bowmen: number; knights: number; dragons: number; beasts: number } {
   const beasts = t.beasts ?? 0;
+  const bowmen = t.bowmen ?? 0;
   const holdable = t.levy + t.knights + t.dragons;
   let remain = Math.min(Math.max(0, keep), holdable);
   const keepD = Math.min(t.dragons, remain);
@@ -140,16 +146,18 @@ function splitSend(t: TerritoryState, keep: number): { levy: number; knights: nu
   const keepK = Math.min(t.knights, remain);
   remain -= keepK;
   const keepL = Math.min(t.levy, remain);
+  const keepB = t.castle ? Math.min(bowmen, 2) : 0;
   return {
     levy: t.levy - keepL,
+    bowmen: Math.max(0, bowmen - keepB),
     knights: t.knights - keepK,
     dragons: t.dragons - keepD,
     beasts,
   };
 }
 
-function sendCount(send: { levy: number; knights: number; dragons: number; beasts: number }) {
-  return send.levy + send.knights + send.dragons + send.beasts;
+function sendCount(send: { levy: number; bowmen?: number; knights: number; dragons: number; beasts: number }) {
+  return send.levy + (send.bowmen ?? 0) + send.knights + send.dragons + send.beasts;
 }
 
 function threatened(state: GameState, t: TerritoryState, player: PlayerId): boolean {
@@ -292,13 +300,13 @@ export function nextAiAction(state: GameState): AiAction {
   const isolated = !openLand;
 
   if (holdCap && threatened(state, holdCap, player)) {
-    if (p.cards.includes("wall") && !holdCap.castle) {
+    if (p.cards.includes("wall") && fortOf(holdCap) < FORT_CAP) {
       return { type: "card", card: "wall", territoryId: capId };
     }
     if (p.cards.includes("levy") && standing(holdCap) < 6) {
       return { type: "card", card: "levy", territoryId: capId };
     }
-    if (p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1)) {
+    if (p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1) && !hasKindJob(state, capId, "levy")) {
       return { type: "train", territoryId: capId, kind: "levy" };
     }
     for (const t of lands) {
@@ -333,7 +341,7 @@ export function nextAiAction(state: GameState): AiAction {
     if (standing(t) <= hostDefense(state, foe) + 1) trainAt = t;
   }
 
-  if (stoutBorder && p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1) && !saving) {
+  if (stoutBorder && !hasKindJob(state, trainAt.id, "levy") && p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1) && !saving) {
     return { type: "train", territoryId: trainAt.id, kind: "levy" };
   }
   if (stoutBorder && holdCap && p.cards.includes("levy")) {
@@ -343,14 +351,14 @@ export function nextAiAction(state: GameState): AiAction {
   if (isolated) {
     for (const t of lands) {
       const meta = TERRITORY_BY_ID[t.id]!;
-      if (constructionBusy(state, t.id)) continue;
+      if (hasKindJob(state, t.id, "port")) continue;
       const port = worksCost(p, "port");
       if (meta.coastal && !t.port && p.gold >= port.gold && p.wood >= port.wood) {
         return { type: "build", territoryId: t.id, kind: "port" };
       }
     }
     for (const t of lands) {
-      if (constructionBusy(state, t.id)) continue;
+      if (hasKindJob(state, t.id, "ship")) continue;
       const ship = worksCost(p, "ship");
       const keelWant = diff === "hard" ? 4 : 2;
       if (t.port && t.ships < keelWant && t.ships < shipsCap(t) && p.gold >= ship.gold && p.wood >= ship.wood) {
@@ -361,7 +369,7 @@ export function nextAiAction(state: GameState): AiAction {
 
   if (hungry) {
     for (const t of lands) {
-      if (constructionBusy(state, t.id) || t.farm) continue;
+      if (hasKindJob(state, t.id, "farm") || t.farm) continue;
       const farm = worksCost(p, "farm");
       if (p.gold >= farm.gold && p.wood >= farm.wood) {
         return { type: "build", territoryId: t.id, kind: "farm" };
@@ -369,18 +377,37 @@ export function nextAiAction(state: GameState): AiAction {
     }
   }
 
-  if (canDragonNow && nest && wagesOk(1) && !stoutBorder) {
+  if (canDragonNow && nest && wagesOk(1) && !stoutBorder && !hasKindJob(state, nest.id, "dragon")) {
     return { type: "train", territoryId: nest.id, kind: "dragon" };
   }
-  if (canBeastNow && holdCap && wagesOk(BEAST_WAGE) && !stoutBorder) {
+  if (canBeastNow && holdCap && wagesOk(BEAST_WAGE) && !stoutBorder && !hasKindJob(state, holdCap.id, "beast")) {
     return { type: "train", territoryId: holdCap.id, kind: "beast" };
   }
 
-  if (stoutBorder && spec.knights && p.gold >= UNIT_COST.knight.gold && p.metal >= UNIT_COST.knight.metal && wagesOk(1) && trainAt.levy >= 2) {
+  if (stoutBorder && spec.knights && p.gold >= UNIT_COST.knight.gold && p.metal >= UNIT_COST.knight.metal && wagesOk(1) && trainAt.levy >= 2 && !hasKindJob(state, trainAt.id, "knight")) {
     return { type: "train", territoryId: trainAt.id, kind: "knight" };
   }
 
-  if (stoutBorder && p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1)) {
+  if (stoutBorder && p.gold >= UNIT_COST.bowman.gold && p.wood >= UNIT_COST.bowman.wood && p.metal >= UNIT_COST.bowman.metal && wagesOk(1) && (trainAt.bowmen ?? 0) < 3 && fortOf(trainAt) >= 1 && !hasKindJob(state, trainAt.id, "bowman")) {
+    return { type: "train", territoryId: trainAt.id, kind: "bowman" };
+  }
+
+  if (stoutBorder) {
+    for (const t of lands) {
+      const wallId = landWalk(state, t, player).find((id) => worksRank(state.territories[id]!, "castle") > 0);
+      if (!wallId) continue;
+      if (!siegeTargetOf(state, t.id) && standing(t) >= 1) {
+        return { type: "siege", from: t.id, to: wallId };
+      }
+      if (!canRaiseSiege(state, t.id)) continue;
+      if ((t.rams ?? 0) < 1 && !hasKindJob(state, t.id, "ram")) return { type: "build", territoryId: t.id, kind: "ram" };
+      if ((t.ladders ?? 0) < 1 && !hasKindJob(state, t.id, "ladder")) return { type: "build", territoryId: t.id, kind: "ladder" };
+      if ((t.towers ?? 0) < 1 && !hasKindJob(state, t.id, "tower")) return { type: "build", territoryId: t.id, kind: "tower" };
+      if ((t.catapults ?? 0) < 1 && !hasKindJob(state, t.id, "catapult")) return { type: "build", territoryId: t.id, kind: "catapult" };
+    }
+  }
+
+  if (stoutBorder && !hasKindJob(state, trainAt.id, "levy") && p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1)) {
     return { type: "train", territoryId: trainAt.id, kind: "levy" };
   }
 
@@ -396,21 +423,20 @@ export function nextAiAction(state: GameState): AiAction {
   if (!openLand && !canSail) {
     for (const t of lands) {
       const meta = TERRITORY_BY_ID[t.id]!;
-      if (constructionBusy(state, t.id)) continue;
       const mine = worksCost(p, "mine");
       const market = worksCost(p, "market");
       const castle = worksCost(p, "castle");
       const road = worksCost(p, "road");
-      if (!meta.coastal && !t.mine && p.gold >= mine.gold && p.stone >= mine.stone) {
+      if (!meta.coastal && !t.mine && !hasKindJob(state, t.id, "mine") && p.gold >= mine.gold && p.stone >= mine.stone) {
         return { type: "build", territoryId: t.id, kind: "mine" };
       }
-      if (!t.road && realm >= 2 && p.gold >= road.gold && p.wood >= road.wood && p.stone >= road.stone) {
+      if (!t.road && realm >= 2 && !hasKindJob(state, t.id, "road") && p.gold >= road.gold && p.wood >= road.wood && p.stone >= road.stone) {
         return { type: "build", territoryId: t.id, kind: "road" };
       }
-      if (!t.market && p.gold >= market.gold && p.wood >= market.wood) {
+      if (!t.market && !hasKindJob(state, t.id, "market") && p.gold >= market.gold && p.wood >= market.wood) {
         return { type: "build", territoryId: t.id, kind: "market" };
       }
-      if (spec.cities && !t.castle && standing(t) >= 4 && p.gold >= castle.gold && p.stone >= castle.stone) {
+      if (spec.cities && fortOf(t) < FORT_CAP && standing(t) >= 4 && !hasKindJob(state, t.id, "castle") && p.gold >= castle.gold && p.stone >= castle.stone) {
         return { type: "build", territoryId: t.id, kind: "castle" };
       }
     }
@@ -429,11 +455,15 @@ export function applyAiAction(state: GameState, action: AiAction): GameState {
     if (kind === "market") return buildMarket(state, action.territoryId);
     if (kind === "road") return buildRoad(state, action.territoryId);
     if (kind === "farm") return buildFarm(state, action.territoryId);
+    if (isSiegeKind(kind)) return buildSiege(state, action.territoryId, kind);
+    if (kind === "scorpion") return buildScorpion(state, action.territoryId);
     return buildShip(state, action.territoryId);
   }
+  if (action.type === "siege") return beginSiege(state, action.from, action.to);
   if (action.type === "march") {
-    return resolveAttack(state, action.from, action.to, {
+    return issueMarch(state, action.from, action.to, {
       levy: action.levy,
+      bowmen: action.bowmen,
       knights: action.knights,
       dragons: action.dragons,
       beasts: action.beasts,
@@ -452,7 +482,7 @@ export function playAiTurns(state: GameState, maxSteps = 800): GameState {
 export function playAiTurnsUntilBattle(
   state: GameState,
   maxSteps = 800,
-): { state: GameState; battle: BattleState | null } {
+): { state: GameState; battle: RaidState | null } {
   let next = state;
   let steps = 0;
   let acted = 0;
@@ -468,21 +498,19 @@ export function playAiTurnsUntilBattle(
       steps += 1;
       continue;
     }
-    const action = nextAiAction(next);
-    if (action.type === "march") {
-      const dest = next.territories[action.to];
-      if (dest && dest.owner === 0) {
-        const battle = openBattle(
-          next,
-          action.from,
-          action.to,
-          { levy: action.levy, knights: action.knights, dragons: action.dragons, beasts: action.beasts },
-          "def",
-          worksDefense(dest),
-        );
-        if (battle) return { state: next, battle };
-      }
+    const incoming = (next.arrivals ?? []).find((a) => next.territories[a.to]?.owner === 0);
+    if (incoming) {
+      const battle = openRaid(
+        next,
+        incoming.from,
+        incoming.to,
+        { levy: incoming.levy, bowmen: incoming.bowmen, knights: incoming.knights, dragons: incoming.dragons, beasts: incoming.beasts },
+        { rams: incoming.rams, catapults: incoming.catapults, ladders: incoming.ladders, towers: incoming.towers },
+        "def",
+      );
+      if (battle) return { state: next, battle };
     }
+    const action = nextAiAction(next);
     const before = next;
     next = applyAiAction(next, action);
     if (action.type !== "end" && next === before) next = endTurn(next);

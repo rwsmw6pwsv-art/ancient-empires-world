@@ -1,4 +1,4 @@
-export type ContinentId = "na" | "ca" | "sa" | "eu" | "af" | "me" | "as" | "oc";
+export type ContinentId = "nw" | "ne" | "ca" | "sa" | "eu" | "an" | "af" | "me" | "ac" | "ae" | "oc";
 
 export type EmpireId =
   | "atlantis"
@@ -10,28 +10,34 @@ export type EmpireId =
   | "egypt"
   | "babylon"
   | "cape"
-  | "patagonia"
   | "gondwana"
   | "thule";
 
-export const PLAYER_COUNT = 12;
-export type PlayerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+export const PLAYER_COUNT = 11;
+export type PlayerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
-export const SAVE_VERSION = 45;
+export const SAVE_VERSION = 67;
 export const WIN_CONTINENTS = 5;
 export const TURN_LIMIT = 200;
-export const GAME_TAGLINE = "Five continents write the age";
+export const GAME_TAGLINE = "Five regions write the age";
 
 export const CONTINENT_NAMES: Record<ContinentId, string> = {
-  na: "North America",
+  nw: "West America",
+  ne: "East America",
   ca: "Central America",
   sa: "South America",
   eu: "Europe",
-  af: "Africa",
+  an: "North Africa",
+  af: "South Africa",
   me: "Middle East",
-  as: "Asia",
+  ac: "Central Asia",
+  ae: "East Asia",
   oc: "Oceania",
 };
+
+export const NA_REGIONS: readonly ContinentId[] = ["nw", "ne"];
+export const AS_REGIONS: readonly ContinentId[] = ["ac", "ae"];
+export const AF_REGIONS: readonly ContinentId[] = ["an", "af"];
 
 export const HOUSES: readonly EmpireId[] = [
   "atlantis",
@@ -43,7 +49,6 @@ export const HOUSES: readonly EmpireId[] = [
   "egypt",
   "babylon",
   "cape",
-  "patagonia",
   "gondwana",
   "thule",
 ] as const;
@@ -55,24 +60,50 @@ export const CAPITOL: Record<EmpireId, string> = {
   aztec: "mexico",
   asgard: "alaska",
   tartaria: "cathay",
-  egypt: "nile",
+  egypt: "nubia",
   babylon: "mesopotamia",
   cape: "cape",
-  patagonia: "patagonia",
   gondwana: "coral",
   thule: "greenland",
 };
 
 export type Difficulty = "easy" | "normal" | "hard";
 export type Opening = "capital";
-/** Men who wake on each capital, before house bonuses. */
+/** Swordmen who wake on each capital, before house bonuses. */
 export const START_LEVY: Record<Difficulty, number> = { easy: 6, normal: 8, hard: 10 };
 /** House beasts who wake on each capital. */
-export const START_BEASTS: Record<Difficulty, number> = { easy: 3, normal: 2, hard: 1 };
+export const START_BEASTS: Record<Difficulty, number> = { easy: 2, normal: 1, hard: 0 };
 
-export type UnitKind = "levy" | "knight" | "dragon" | "beast";
+export type UnitKind = "levy" | "bowman" | "knight" | "dragon" | "beast";
+export type SiegeKind = "ram" | "catapult" | "ladder" | "tower";
 
-export type JobKind = "castle" | "mine" | "port" | "ship" | "market" | "road" | "farm";
+export type JobKind = "castle" | "mine" | "port" | "ship" | "market" | "road" | "farm" | "scorpion" | SiegeKind | UnitKind;
+
+export function isTrainKind(kind: string): kind is UnitKind {
+  return kind === "levy" || kind === "bowman" || kind === "knight" || kind === "dragon" || kind === "beast";
+}
+
+export const SIEGE_KINDS: readonly SiegeKind[] = ["ram", "catapult", "ladder", "tower"] as const;
+
+export function isSiegeKind(kind: string): kind is SiegeKind {
+  return kind === "ram" || kind === "catapult" || kind === "ladder" || kind === "tower";
+}
+
+export const UNIT_LABEL: Record<UnitKind, string> = {
+  levy: "Swordman",
+  bowman: "Bowman",
+  knight: "Knight",
+  dragon: "Dragon",
+  beast: "Beast",
+};
+
+export const UNIT_LABEL_PLURAL: Record<UnitKind, string> = {
+  levy: "Swordmen",
+  bowman: "Bowmen",
+  knight: "Knights",
+  dragon: "Dragons",
+  beast: "Beasts",
+};
 
 export type CardId = "levy" | "forge" | "tide" | "raid" | "wall";
 
@@ -96,17 +127,15 @@ export interface EmpireDef {
   blurb: string;
   /** Extra wood on owned African lands (Karoo). */
   woodOnAf?: boolean;
-  /** Extra timber on owned Asian lands (Lemuria). */
+  /** Extra timber on owned Asian lands (Lemuria — Central and East Asia). */
   woodOnAs?: boolean;
-  /** Extra timber on owned North American lands (Asgard). */
+  /** Extra timber on owned American lands (Asgard — West and East America). */
   woodOnNa?: boolean;
-  /** Extra stone on owned South American lands (Patagonia). */
-  stoneOnSa?: boolean;
-  /** Extra stone on owned North American lands (Nord). */
+  /** Extra stone on owned American lands (Nord — West and East America). */
   stoneOnNa?: boolean;
   /** Extra stone on owned European lands (Atlantis). */
   stoneOnEu?: boolean;
-  /** Extra stone on owned Asian lands (Tartaria). */
+  /** Extra stone on owned Asian lands (Tartaria — Central and East Asia). */
   stoneOnAs?: boolean;
   /** Extra gold on owned Oceanian lands (Sahul). */
   goldOnOc?: boolean;
@@ -134,6 +163,7 @@ export interface TerritoryState {
   id: string;
   owner: PlayerId | "barbarian";
   levy: number;
+  bowmen: number;
   knights: number;
   dragons: number;
   beasts: number;
@@ -149,6 +179,17 @@ export interface TerritoryState {
   farm: boolean;
   farmRank: number;
   ships: number;
+  rams: number;
+  catapults: number;
+  ladders: number;
+  towers: number;
+  scorpions: number;
+  /** 0 none, 1 wooden walls, 2 stone walls, 3 wooden keep, 4 stone keep. */
+  fort: number;
+  /** Catapult hits already landed on this city before the assault. */
+  breach: number;
+  /** Neighbouring city that currently lays siege here. */
+  besiegedFrom: string | null;
   pressure: number;
   population: number;
 }
@@ -174,6 +215,39 @@ export interface Job {
   territoryId: string;
   player: PlayerId;
   remaining: number;
+  /** Original watches when the job was queued — used for the progress bar. */
+  total: number;
+  gold: number;
+  wood: number;
+  stone: number;
+  metal: number;
+}
+
+export interface MarchOrder {
+  id: string;
+  player: PlayerId;
+  from: string;
+  to: string;
+  levy: number;
+  bowmen: number;
+  knights: number;
+  dragons: number;
+  beasts: number;
+  rams: number;
+  catapults: number;
+  ladders: number;
+  towers: number;
+  ships: number;
+  remaining: number;
+}
+
+export interface PulseEvent {
+  type: "train" | "build" | "march";
+  player: PlayerId;
+  fromId?: string;
+  toId: string;
+  kind?: string;
+  text: string;
 }
 
 export type Phase = "play" | "gameover";
@@ -193,6 +267,9 @@ export interface GameState {
   players: PlayerState[];
   territories: Record<string, TerritoryState>;
   jobs: Job[];
+  marches: MarchOrder[];
+  arrivals: MarchOrder[];
+  events: PulseEvent[];
   log: string[];
   marchFrom: string | null;
   winner: PlayerId | null;
@@ -203,18 +280,30 @@ export type AiAction =
   | { type: "end" }
   | { type: "train"; territoryId: string; kind: UnitKind }
   | { type: "build"; territoryId: string; kind: JobKind }
-  | { type: "march"; from: string; to: string; levy: number; knights: number; dragons: number; beasts: number }
+  | { type: "siege"; from: string; to: string }
+  | { type: "march"; from: string; to: string; levy: number; bowmen: number; knights: number; dragons: number; beasts: number }
   | { type: "card"; card: CardId; territoryId?: string };
 
 export interface HostForce {
   levy: number;
+  bowmen?: number;
   knights: number;
   dragons: number;
   beasts: number;
 }
 
+export interface SiegeStock {
+  rams: number;
+  catapults: number;
+  ladders: number;
+  towers: number;
+}
+
+export const EMPTY_HOST: HostForce = { levy: 0, bowmen: 0, knights: 0, dragons: 0, beasts: 0 };
+
 export const UNIT_COST: Record<UnitKind, { gold: number; wood: number; stone: number; metal: number }> = {
   levy: { gold: 2, wood: 0, stone: 0, metal: 1 },
+  bowman: { gold: 2, wood: 1, stone: 0, metal: 1 },
   knight: { gold: 4, wood: 0, stone: 0, metal: 1 },
   dragon: { gold: 25, wood: 0, stone: 0, metal: 0 },
   /** Fallback only — live beast gold is per-empire. */
@@ -222,7 +311,8 @@ export const UNIT_COST: Record<UnitKind, { gold: number; wood: number; stone: nu
 };
 
 export const UNIT_ATK: Record<UnitKind, number> = {
-  levy: 1,
+  levy: 2,
+  bowman: 1,
   knight: 2,
   beast: 7,
   dragon: 25,
@@ -230,6 +320,7 @@ export const UNIT_ATK: Record<UnitKind, number> = {
 
 export const UNIT_DEF: Record<UnitKind, number> = {
   levy: 1,
+  bowman: 3,
   knight: 2,
   beast: 8,
   dragon: 25,
@@ -237,7 +328,8 @@ export const UNIT_DEF: Record<UnitKind, number> = {
 
 /** Hit points per body on the field. */
 export const UNIT_HP: Record<UnitKind, number> = {
-  levy: 1,
+  levy: 2,
+  bowman: 1,
   knight: 2,
   beast: 3,
   dragon: 5,
@@ -250,20 +342,63 @@ export const CITY_DEF = 5;
 export const WALL_DEF = 12;
 /** Extra defence per wall rank after the first. */
 export const WALL_IMPROVE = 8;
-export const TRIBAL_DEF = 1;
+export const TRIBAL_DEF = 4;
+export const FORT_CAP = 4;
+export const FORT_LABEL = ["None", "Wooden walls", "Stone walls", "Wooden keep", "Stone keep"] as const;
+export const FORT_DEF = [0, 6, 12, 20, 28] as const;
+export const FORT_COST: Record<2 | 3 | 4, { gold: number; wood: number; stone: number; metal: number }> = {
+  2: { gold: 4, wood: 2, stone: 4, metal: 0 },
+  3: { gold: 6, wood: 5, stone: 2, metal: 0 },
+  4: { gold: 8, wood: 2, stone: 6, metal: 0 },
+};
+export const FORT_TURNS: Record<2 | 3 | 4, number> = { 2: 1, 3: 2, 4: 2 };
+export const UNIT_TURNS: Record<UnitKind, number> = {
+  levy: 1,
+  bowman: 1,
+  knight: 2,
+  beast: 3,
+  dragon: 5,
+};
 export const DRAGON_CAP = 1;
 /** Highest rank for markets, ports, mines and walls. */
 export const WORKS_CAP = 3;
 /** Keels per harbour rank (I=2, II=4, III=6). A beach without a port berths 1. */
 export const SHIPS_PER_RANK = 2;
 export const SHIPS_CAP = WORKS_CAP * SHIPS_PER_RANK;
+/** Siege engines stored on a city. */
+export const SIEGE_CAP = 2;
+/** At most one of each engine marches with a host. */
+export const SIEGE_BRING = 1;
+/** Engines cost nothing — they take time once a neighbour is under siege. */
+export const SIEGE_COST: Record<SiegeKind, { gold: number; wood: number; stone: number; metal: number }> = {
+  ram: { gold: 0, wood: 0, stone: 0, metal: 0 },
+  catapult: { gold: 0, wood: 0, stone: 0, metal: 0 },
+  ladder: { gold: 0, wood: 0, stone: 0, metal: 0 },
+  tower: { gold: 0, wood: 0, stone: 0, metal: 0 },
+};
+export const SIEGE_TURNS: Record<SiegeKind, number> = {
+  ram: 1,
+  ladder: 1,
+  tower: 3,
+  catapult: 5,
+};
+export const SIEGE_LABEL: Record<SiegeKind, string> = {
+  ram: "Ram",
+  catapult: "Catapult",
+  ladder: "Ladders",
+  tower: "Siege tower",
+};
+export const TOWER_CARGO = { levy: 20, knights: 5, beasts: 5 } as const;
+export const SCORPION_CAP = 2;
+export const SCORPION_TURNS = 2;
+export const SCORPION_COST = { gold: 3, wood: 2, stone: 0, metal: 2 };
 /** Silver wages per this many standing men; a host always costs at least 1. */
 export const LEVY_COMMISSION = 2;
 /** Silver wages per standing house beast. Hunt with them or the mint eats the court. */
 export const BEAST_WAGE = 3;
 /** Flat gold on any capture, plus 1 per defending soldier. */
 export const CAPTURE_GOLD_BASE = 2;
-/** Extra gold on top of the continent bonus for cracking a locked continent. */
+/** Extra gold on top of the region bonus for cracking a locked region. */
 export const CONTINENT_BREAK_GOLD = 6;
 /** Silver minted each watch by any held capital. */
 export const CAPITAL_SILVER = 5;
@@ -273,12 +408,15 @@ export const SILVER_PER_LAND = 2;
 export const FOOD_PER_POP = 2;
 
 export const CONTINENT_BONUS: Record<ContinentId, number> = {
-  na: 5,
+  nw: 3,
+  ne: 3,
   ca: 3,
   sa: 4,
   eu: 5,
+  an: 4,
   af: 4,
   me: 4,
-  as: 5,
+  ac: 3,
+  ae: 3,
   oc: 3,
 };

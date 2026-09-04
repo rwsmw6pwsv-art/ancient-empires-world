@@ -2,7 +2,7 @@ import { empireOf } from "./empires";
 import { beastOf, landscapeOf, type BeastDef } from "./landscape";
 import { mulberry32, randInt } from "./rng";
 import type { EmpireId, GameState, HostForce, TerritoryState, UnitKind } from "./types";
-import { UNIT_ATK, UNIT_DEF, UNIT_HP } from "./types";
+import { EMPTY_HOST, UNIT_ATK, UNIT_DEF, UNIT_HP, UNIT_LABEL_PLURAL } from "./types";
 import { TERRITORY_BY_ID } from "./world";
 
 export type BattleSide = "atk" | "def";
@@ -38,12 +38,13 @@ export interface BattleState {
   log: string[];
 }
 
-const EMPTY: HostForce = { levy: 0, knights: 0, dragons: 0, beasts: 0 };
+const EMPTY: HostForce = { ...EMPTY_HOST };
 
 export function hostFromSide(stacks: BattleStack[], side: BattleSide): HostForce {
   const live = stacks.filter((s) => s.side === side && s.count > 0);
   return {
     levy: live.filter((s) => s.kind === "levy").reduce((n, s) => n + s.count, 0),
+    bowmen: live.filter((s) => s.kind === "bowman").reduce((n, s) => n + s.count, 0),
     knights: live.filter((s) => s.kind === "knight").reduce((n, s) => n + s.count, 0),
     dragons: live.filter((s) => s.kind === "dragon").reduce((n, s) => n + s.count, 0),
     beasts: live.filter((s) => s.kind === "beast").reduce((n, s) => n + s.count, 0),
@@ -104,7 +105,7 @@ function statsFor(
   const atk0 = kind === "beast" ? (beast?.atk ?? UNIT_ATK.beast) : UNIT_ATK[kind];
   const def0 = kind === "beast" ? (beast?.def ?? UNIT_DEF.beast) : UNIT_DEF[kind];
   const mod = terrainMods(terrain, empire, side, kind);
-  const name = kind === "beast" ? (beast?.name ?? "Beast") : kind === "levy" ? "Men" : kind === "knight" ? "Knights" : "Dragons";
+  const name = kind === "beast" ? (beast?.name ?? "Beast") : UNIT_LABEL_PLURAL[kind];
   return { atk: atk0 + mod.atk, def: def0 + mod.def, name, hp: UNIT_HP[kind] };
 }
 
@@ -136,6 +137,7 @@ function spawn(
   add("dragon", force.dragons);
   add("beast", force.beasts);
   add("knight", force.knights);
+  add("bowman", force.bowmen ?? 0);
   add("levy", force.levy);
   return out;
 }
@@ -154,11 +156,12 @@ export function openBattle(
   if (from.owner === to.owner) return null;
   const send: HostForce = {
     levy: force.levy,
+    bowmen: force.bowmen ?? 0,
     knights: force.knights,
     dragons: force.dragons,
     beasts: force.beasts,
   };
-  if (send.levy + send.knights + send.dragons + send.beasts < 1) return null;
+  if (send.levy + (send.bowmen ?? 0) + send.knights + send.dragons + send.beasts < 1) return null;
   const terrain = landscapeOf(toId).terrain;
   const atkEmpire = empireFor(state, from.owner);
   const defEmpire = empireFor(state, to.owner);
@@ -166,7 +169,7 @@ export function openBattle(
     ...spawn("atk", send, beastFor(state, from.owner), terrain, atkEmpire),
     ...spawn(
       "def",
-      { levy: to.levy, knights: to.knights, dragons: to.dragons, beasts: to.beasts ?? 0 },
+      { levy: to.levy, bowmen: to.bowmen ?? 0, knights: to.knights, dragons: to.dragons, beasts: to.beasts ?? 0 },
       beastFor(state, to.owner),
       terrain,
       defEmpire,
@@ -277,9 +280,15 @@ function resolveStrike(battle: BattleState, attackerId: string, targetId: string
   if (!attacker || !target || attacker.count < 1 || target.count < 1) return battle;
   if (attacker.exhausted || attacker.side === target.side) return battle;
   const rng = mulberry32((next.seed + next.strikes * 7919) >>> 0);
-  const aRoll = attacker.atk + randInt(rng, 0, 2);
-  const dRoll = target.def + randInt(rng, 0, 2);
+  const aRoll = attacker.atk + randInt(rng, 0, 2) + (attacker.kind === "knight" && target.kind === "levy" ? 3 : 0);
+  const dRoll = target.def + randInt(rng, 0, 2) + (target.kind === "bowman" && target.side === "def" ? 1 : 0);
   next.strikes += 1;
+  if (target.kind === "dragon" && attacker.kind !== "dragon") {
+    next.log.push(`${stackLabel(attacker)} cannot wound a dragon.`);
+    const still = next.stacks.find((s) => s.id === attacker.id);
+    if (still && still.count > 0) still.exhausted = true;
+    return next;
+  }
   const dmg = hitDamage(aRoll, dRoll);
   if (dmg < 1) {
     next.log.push(`${stackLabel(attacker)} miss a ${target.name.toLowerCase()}.`);

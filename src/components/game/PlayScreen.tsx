@@ -27,13 +27,19 @@ export function PlayScreen({
     state,
     selected,
     sendLevy,
+    sendBowmen,
     sendKnights,
     sendDragons,
     sendBeasts,
+    sendRams,
+    sendCatapults,
+    sendLadders,
+    sendTowers,
     pendingOccupy,
     pendingAttack,
     pendingBattle,
     pendingWatch,
+    fx,
     newGame,
     resume,
     select,
@@ -45,9 +51,10 @@ export function PlayScreen({
     occupyHold,
     occupyRecall,
     confirmAttack,
+    laySiege,
     cancelAttack,
-    battleStrike,
-    battleAuto,
+    cancelJob,
+    cancelMarch,
     battleFinish,
     battleCancel,
     dismissWatch,
@@ -55,6 +62,12 @@ export function PlayScreen({
     abandon,
   } = useGame();
   const [action, setAction] = useState<ActionKind | null>(null);
+
+  useEffect(() => {
+    if (!fx.length) return;
+    const t = window.setTimeout(() => useGame.setState({ fx: [] }), 1400);
+    return () => window.clearTimeout(t);
+  }, [fx]);
 
   useEffect(() => {
     if (empire === "resume") {
@@ -82,10 +95,15 @@ export function PlayScreen({
   }
 
   const from = state.marchFrom;
-  const targets = from && action === "march" ? legalMarchTargets(state, from) : [];
+  const marchTargets = from && action === "march" ? legalMarchTargets(state, from) : [];
+  const targets = pendingAttack ? Array.from(new Set([...marchTargets, pendingAttack.to])) : marchTargets;
 
   function handleSelect(id: string) {
-    if (action === "march") select(id);
+    if (!state) return;
+    const t = state.territories[id];
+    const campId = t?.besiegedFrom;
+    const ourSiege = Boolean(campId && state.territories[campId]?.owner === 0);
+    if (action === "march" || pendingAttack || ourSiege) select(id);
     else focus(id);
   }
 
@@ -106,6 +124,7 @@ export function PlayScreen({
           state={state}
           selected={selected}
           targets={targets}
+          fx={fx}
           onSelect={handleSelect}
           onTap={(id) => {
             if (pendingAttack) {
@@ -128,28 +147,39 @@ export function PlayScreen({
         <div className="pointer-events-none absolute left-5 top-4 right-5 z-10 sm:left-6 sm:right-auto">
           <ProvinceBanner state={state} selected={selected} />
         </div>
-        {pendingBattle ? (
-          <BattleScreen
-            state={state}
-            battle={pendingBattle}
-            onStrike={battleStrike}
-            onAuto={battleAuto}
-            onFinish={battleFinish}
-            onCancel={battleCancel}
-          />
+        {fx.some((e) => e.text) ? (
+          <div className="pointer-events-none absolute inset-x-8 top-16 z-20 flex flex-col items-center gap-1 sm:top-20">
+            {fx
+              .filter((e) => e.text)
+              .slice(-3)
+              .map((e, i) => (
+                <p key={`${e.type}-${e.toId}-${i}`} className="fx-toast">
+                  {e.text}
+                </p>
+              ))}
+          </div>
         ) : null}
-        {pendingAttack ? (
+        {pendingAttack && !pendingBattle ? (
           <div className="absolute inset-x-3 bottom-2 z-20 sm:inset-x-4">
             <AttackPreview
               state={state}
               fromId={pendingAttack.from}
               toId={pendingAttack.to}
               levy={pendingAttack.levy}
+              bowmen={pendingAttack.bowmen}
               knights={pendingAttack.knights}
               dragons={pendingAttack.dragons}
               beasts={pendingAttack.beasts}
+              rams={pendingAttack.rams}
+              catapults={pendingAttack.catapults}
+              ladders={pendingAttack.ladders}
+              towers={pendingAttack.towers}
               onContinue={confirmAttack}
+              onSiege={laySiege}
               onCancel={cancelAttack}
+              onBuild={build}
+              onSend={setSend}
+              onCancelJob={cancelJob}
             />
           </div>
         ) : pendingOccupy ? (
@@ -173,47 +203,64 @@ export function PlayScreen({
               state={state}
               selected={selected}
               sendLevy={sendLevy}
+              sendBowmen={sendBowmen}
               sendKnights={sendKnights}
               sendDragons={sendDragons}
               sendBeasts={sendBeasts}
+              sendRams={sendRams}
+              sendCatapults={sendCatapults}
+              sendLadders={sendLadders}
+              sendTowers={sendTowers}
               onSend={setSend}
               onTrain={train}
               onBuild={build}
               onPlay={play}
               onMarchTo={select}
+              onCancelJob={cancelJob}
+              onCancelMarch={cancelMarch}
             />
           </div>
         ) : null}
       </div>
-      <nav className="grid shrink-0 grid-cols-3 gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
-        {(
-          [
-            ["train", "Train", "Raise men, knights, or a dragon in the selected city. House beasts raise only at your capital."],
-            ["march", "March", "Set the host, then tap a neighbour to attack or reinforce."],
-            ["build", "Build", "Raise a port, mine, market, walls or ship in the selected land."],
-          ] as const
-        ).map(([id, label, hint]) => (
-          <div key={id} className="flex items-center gap-1">
-            <Hint text={hint} />
-            <button
-              type="button"
-            onClick={() => {
-              if (id === "march" && selected && state.territories[selected]?.owner === 0) {
-                focus(selected);
-              }
-              setAction((cur) => (cur === id ? null : id));
-            }}
-              className={cn(
-                "flex h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-border bg-raised text-sm font-medium transition-[filter,background-color,box-shadow] duration-100",
-                action === id && "border-fg bg-surface text-fg",
-              )}
-            >
-              <ActionIcon kind={id} />
-              {label}
-            </button>
-          </div>
-        ))}
-      </nav>
+      {!pendingBattle ? (
+        <nav className="grid shrink-0 grid-cols-3 gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+          {(
+            [
+              ["train", "Train", "Raise swordmen (1 watch), bowmen (1), knights (2), beasts (3) or a dragon (5). House beasts raise only at your capital."],
+              ["march", "March", "Set the host, then tap a neighbour. Columns take a watch to arrive. Send different units to different lands in the same watch."],
+              ["build", "Build", "Raise a port, mine, market, walls, keep, ship, scorpion, or siege engines in the selected land."],
+            ] as const
+          ).map(([id, label, hint]) => (
+            <div key={id} className="flex items-center gap-1">
+              <Hint text={hint} />
+              <button
+                type="button"
+                onClick={() => {
+                  if (id === "march" && selected && state.territories[selected]?.owner === 0) {
+                    focus(selected);
+                  }
+                  setAction((cur) => (cur === id ? null : id));
+                }}
+                className={cn(
+                  "flex h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-border bg-raised text-sm font-medium transition-[filter,background-color,box-shadow] duration-100",
+                  action === id && "border-fg bg-surface text-fg",
+                )}
+              >
+                <ActionIcon kind={id} />
+                {label}
+              </button>
+            </div>
+          ))}
+        </nav>
+      ) : null}
+      {pendingBattle ? (
+        <BattleScreen
+          state={state}
+          battle={pendingBattle}
+          onFinish={battleFinish}
+          onCancel={battleCancel}
+        />
+      ) : null}
       {state.phase === "gameover" ? (
         <EndScreen
           state={state}

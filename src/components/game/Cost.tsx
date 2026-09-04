@@ -1,5 +1,7 @@
-import { Footprints, Hammer, Swords, Users } from "lucide-react";
-import { BATTLE_UNIT_SRC, PROP_SRC, RESOURCE_TINT } from "@/lib/game/landscape";
+import { Footprints, Hammer, Swords } from "lucide-react";
+import { BATTLE_UNIT_SRC, PROP_SRC, RESOURCE_TINT, SIEGE_SRC, fortProp } from "@/lib/game/landscape";
+import type { SiegeKind, UnitKind } from "@/lib/game/types";
+import { SIEGE_LABEL, UNIT_LABEL_PLURAL } from "@/lib/game/types";
 import { cn } from "@/lib/utils";
 
 const RES_CLASS = {
@@ -82,22 +84,26 @@ export function UnitMark({
   beastSrc,
   beastName,
 }: {
-  kind: "levy" | "knight" | "dragon" | "beast";
+  kind: UnitKind;
   amount?: number;
   beastSrc?: string | null;
   beastName?: string;
 }) {
-  const label = kind === "levy" ? "Men" : kind === "knight" ? "Knights" : kind === "dragon" ? "Dragons" : (beastName ?? "Beasts");
+  const label = kind === "beast" ? (beastName ?? "Beasts") : UNIT_LABEL_PLURAL[kind];
+  const src =
+    kind === "levy"
+      ? BATTLE_UNIT_SRC.levy
+      : kind === "bowman"
+        ? BATTLE_UNIT_SRC.bowman
+        : kind === "knight"
+          ? PROP_SRC.knight
+          : kind === "dragon"
+            ? PROP_SRC.dragon
+            : beastSrc;
   return (
     <span className={cn("inline-flex items-center gap-1 tabular-nums", `unit-${kind}`)}>
-      {kind === "levy" ? (
-        <Users className="size-3.5 shrink-0" aria-hidden="true" />
-      ) : kind === "knight" ? (
-        <img src={PROP_SRC.knight} alt="" className="hud-icon hud-icon-knight" />
-      ) : kind === "dragon" ? (
-        <img src={PROP_SRC.dragon} alt="" className="hud-icon" />
-      ) : beastSrc ? (
-        <img src={beastSrc} alt="" className="hud-icon" />
+      {src ? (
+        <img src={src} alt="" className={cn("hud-icon", kind === "knight" && "hud-icon-knight", (kind === "levy" || kind === "bowman") && "object-cover")} />
       ) : (
         <Swords className="size-3.5 shrink-0" aria-hidden="true" />
       )}
@@ -107,12 +113,12 @@ export function UnitMark({
   );
 }
 
-export function WorkMark({ kind }: { kind: "port" | "castle" | "market" | "mine" | "ship" | "road" | "farm" | "walls" }) {
+export function WorkMark({ kind, fort }: { kind: "port" | "castle" | "market" | "mine" | "ship" | "road" | "farm" | "walls"; fort?: number }) {
   const src =
     kind === "port"
       ? PROP_SRC.port
       : kind === "castle" || kind === "walls"
-        ? PROP_SRC.walls
+        ? fortProp(fort ?? (kind === "castle" ? 4 : 2))
         : kind === "market"
           ? PROP_SRC.market
           : kind === "mine"
@@ -134,28 +140,57 @@ export function ResourceDot({ kind }: { kind: keyof typeof RESOURCE_TINT }) {
   return <img src={RES_SRC[kind]} alt="" className="hud-icon" />;
 }
 
+export function SiegeMark({ kind, amount }: { kind: SiegeKind; amount?: number }) {
+  return (
+    <span className="inline-flex items-center gap-1 tabular-nums">
+      <img src={SIEGE_SRC[kind]} alt="" className="hud-icon object-cover" />
+      {amount === undefined ? null : (
+        <>
+          <span className="sr-only">{SIEGE_LABEL[kind]}</span>
+          <span className="font-medium text-fg">{amount}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
 export function HostStrip({
   levy = 0,
+  bowmen = 0,
   knights = 0,
   dragons = 0,
   beasts = 0,
+  rams = 0,
+  catapults = 0,
+  ladders = 0,
+  towers = 0,
   beastSrc,
   beastName = "Beasts",
   large,
 }: {
   levy?: number;
+  bowmen?: number;
   knights?: number;
   dragons?: number;
   beasts?: number;
+  rams?: number;
+  catapults?: number;
+  ladders?: number;
+  towers?: number;
   beastSrc?: string | null;
   beastName?: string;
   large?: boolean;
 }) {
   const tiles: { src: string; n: number; label: string; cover: boolean }[] = [
-    { src: BATTLE_UNIT_SRC.levy, n: levy, label: "Men", cover: true },
+    { src: BATTLE_UNIT_SRC.levy, n: levy, label: "Swordmen", cover: true },
+    { src: BATTLE_UNIT_SRC.bowman, n: bowmen, label: "Bowmen", cover: true },
     { src: PROP_SRC.knight, n: knights, label: "Knights", cover: false },
     { src: beastSrc || PROP_SRC.dragon, n: beasts, label: beastName, cover: !beastSrc },
     { src: BATTLE_UNIT_SRC.dragon, n: dragons, label: "Dragons", cover: true },
+    { src: SIEGE_SRC.ram, n: rams, label: "Ram", cover: true },
+    { src: SIEGE_SRC.tower, n: towers, label: "Siege tower", cover: true },
+    { src: SIEGE_SRC.ladder, n: ladders, label: "Ladders", cover: true },
+    { src: SIEGE_SRC.catapult, n: catapults, label: "Catapult", cover: true },
   ];
   return (
     <div className="flex flex-wrap gap-1.5">

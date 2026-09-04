@@ -165,8 +165,9 @@ export const TERRAIN_TEXTURE: Record<TerrainId, string> = {
   mediterranean: "/map/terrain/grass.jpg",
 };
 
-export const BATTLE_UNIT_SRC: Record<"levy" | "knight" | "dragon", string> = {
+export const BATTLE_UNIT_SRC: Record<"levy" | "bowman" | "knight" | "dragon", string> = {
   levy: "/map/battle/levy.jpg",
+  bowman: "/map/battle/bowman.jpg",
   knight: "/map/battle/knight.jpg",
   dragon: "/map/battle/dragon.jpg",
 };
@@ -179,6 +180,8 @@ export const PROP_SRC = {
   castle: "/map/props/castle.png",
   camp: "/map/props/camp.png",
   walls: "/map/props/walls.png",
+  woodwalls: "/map/props/woodwalls.png?v=ring",
+  woodkeep: "/map/props/woodkeep.png",
   port: "/map/props/port.png",
   mine: "/map/props/mine.png",
   market: "/map/props/market.png",
@@ -186,6 +189,7 @@ export const PROP_SRC = {
   farm: "/map/props/farm.png",
   dragon: "/map/props/dragon.png",
   knight: "/map/props/knight.png",
+  scorpion: "/map/props/scorpion.jpg",
   gold: "/map/props/gold.png",
   silver: "/map/props/silver.svg",
   wood: "/map/props/wood.png",
@@ -206,6 +210,21 @@ export const PROP_SRC = {
   icewall: "/map/props/icewall.png",
 } as const;
 
+/** Map seat art for a fort rank: palisade, stone walls, timber keep, stone keep. */
+export function fortProp(fort: number): string {
+  if (fort <= 1) return PROP_SRC.woodwalls;
+  if (fort === 2) return PROP_SRC.walls;
+  if (fort === 3) return PROP_SRC.woodkeep;
+  return PROP_SRC.castle;
+}
+
+export const SIEGE_SRC = {
+  ram: "/map/props/siege/ram.jpg",
+  catapult: "/map/props/siege/catapult.jpg",
+  ladder: "/map/props/siege/ladder.jpg",
+  tower: "/map/props/siege/tower.jpg",
+} as const;
+
 export const CAPITAL_SRC: Record<EmpireId, string> = {
   atlantis: "/map/props/capitals/atlantis.svg",
   lumuria: "/map/props/capitals/lumuria.svg",
@@ -216,30 +235,35 @@ export const CAPITAL_SRC: Record<EmpireId, string> = {
   egypt: "/map/props/capitals/egypt.svg",
   babylon: "/map/props/capitals/babylon.svg",
   cape: "/map/props/capitals/cape.svg",
-  patagonia: "/map/props/capitals/patagonia.svg",
   gondwana: "/map/props/capitals/gondwana.svg",
   thule: "/map/props/capitals/thule.svg",
 };
 
 export const CONTINENT_TOWN_SRC: Record<ContinentId, string> = {
-  na: "/map/props/cities/na-town.svg",
+  nw: "/map/props/cities/na-town.svg",
+  ne: "/map/props/cities/na-town.svg",
   ca: "/map/props/cities/ca-town.svg",
   sa: "/map/props/cities/sa-town.svg",
   eu: "/map/props/cities/eu-town.svg",
+  an: "/map/props/cities/af-town.svg",
   af: "/map/props/cities/af-town.svg",
   me: "/map/props/cities/me-town.svg",
-  as: "/map/props/cities/as-town.svg",
+  ac: "/map/props/cities/as-town.svg",
+  ae: "/map/props/cities/as-town.svg",
   oc: "/map/props/cities/oc-town.svg",
 };
 
 export const CONTINENT_CITY_SRC: Record<ContinentId, string> = {
-  na: "/map/props/cities/na.svg",
+  nw: "/map/props/cities/na.svg",
+  ne: "/map/props/cities/na.svg",
   ca: "/map/props/cities/ca.svg",
   sa: "/map/props/cities/sa.svg",
   eu: "/map/props/cities/eu.svg",
+  an: "/map/props/cities/af.svg",
   af: "/map/props/cities/af.svg",
   me: "/map/props/cities/me.svg",
-  as: "/map/props/cities/as.svg",
+  ac: "/map/props/cities/as.svg",
+  ae: "/map/props/cities/as.svg",
   oc: "/map/props/cities/oc.svg",
 };
 
@@ -283,7 +307,6 @@ export type BeastId =
   | "elephant"
   | "crocodile"
   | "siberian-tiger"
-  | "grizzly"
   | "polar-bear"
   | "hippo";
 
@@ -305,7 +328,6 @@ export const EMPIRE_BEAST: Record<EmpireId, BeastDef> = {
   babylon: { id: "elephant", name: "Elephants", atk: 16, def: 10, cost: 10 },
   gondwana: { id: "crocodile", name: "Crocodiles", atk: 13, def: 8, cost: 7 },
   tartaria: { id: "siberian-tiger", name: "Siberian tigers", atk: 15, def: 9, cost: 9 },
-  patagonia: { id: "grizzly", name: "Grizzly bears", atk: 15, def: 9, cost: 9 },
   thule: { id: "polar-bear", name: "Polar bears", atk: 16, def: 10, cost: 10 },
   cape: { id: "hippo", name: "Hippos", atk: 15, def: 10, cost: 9 },
 };
@@ -320,7 +342,6 @@ export const BEAST_SRC: Record<BeastId, string> = {
   elephant: "/map/fauna/elephant.png",
   crocodile: "/map/fauna/crocodile.png",
   "siberian-tiger": "/map/fauna/siberian-tiger.png",
-  grizzly: "/map/fauna/grizzly.png",
   "polar-bear": "/map/fauna/polar-bear.png",
   hippo: "/map/fauna/hippo.png",
 };
@@ -335,7 +356,6 @@ export const BEAST_LABEL: Record<BeastId, string> = {
   elephant: "Elephants",
   crocodile: "Crocodiles",
   "siberian-tiger": "Siberian tigers",
-  grizzly: "Grizzly bears",
   "polar-bear": "Polar bears",
   hippo: "Hippos",
 };
@@ -364,19 +384,31 @@ export const SEA_LIFE: { fauna: FaunaId; x: number; y: number; w: number; h: num
 
 export const LANDSCAPE: Record<string, LandscapeDef> = {
   alaska: { terrain: "tundra", resource: "metal", wonder: "meadhall", fauna: "buffalo" },
+  aleut: { terrain: "tundra", resource: "silver", fauna: "buffalo" },
   yukon: { terrain: "tundra", resource: "silver", fauna: "moose" },
+  mackenzie: { terrain: "tundra", resource: "metal", fauna: "moose" },
   hudson: { terrain: "tundra", resource: "metal", fauna: "polar-bear" },
+  ontario: { terrain: "tundra", resource: "silver", fauna: "polar-bear" },
   labrador: { terrain: "forest", resource: "wood", fauna: "moose" },
+  acadia: { terrain: "forest", resource: "food", fauna: "moose" },
   greenland: { terrain: "ice", resource: "stone", wonder: "icewall", fauna: "polar-bear" },
+  westgreenland: { terrain: "ice", resource: "stone", fauna: "polar-bear" },
+  baffin: { terrain: "tundra", resource: "silver", fauna: "polar-bear" },
   cascade: { terrain: "mountain", resource: "wood", fauna: "moose" },
+  columbia: { terrain: "forest", resource: "metal", fauna: "moose" },
   prairie: { terrain: "grass", resource: "food", fauna: "bison" },
+  dakota: { terrain: "grass", resource: "metal", fauna: "bison" },
   heartland: { terrain: "grass", resource: "gold", fauna: "bison" },
+  lakes: { terrain: "forest", resource: "wood", fauna: "bison" },
   seaboard: { terrain: "forest", resource: "food", fauna: "bison" },
+  florida: { terrain: "jungle", resource: "wood", fauna: "bison" },
 
   hawaii: { terrain: "jungle", resource: "wood", fauna: "dolphin" },
   texas: { terrain: "savanna", resource: "silver", fauna: "bison" },
   sierra: { terrain: "mountain", resource: "metal", fauna: "tiger" },
+  baja: { terrain: "desert", resource: "gold", fauna: "tiger" },
   mexico: { terrain: "mountain", resource: "gold", wonder: "teocalli", fauna: "jaguar" },
+  oaxaca: { terrain: "desert", resource: "silver", fauna: "jaguar" },
   yucatan: { terrain: "jungle", resource: "wood", fauna: "tiger" },
   panama: { terrain: "jungle", resource: "gold", fauna: "tiger" },
   caribbean: { terrain: "jungle", resource: "wood", fauna: "dolphin" },
@@ -385,52 +417,87 @@ export const LANDSCAPE: Record<string, LandscapeDef> = {
   amazon: { terrain: "jungle", resource: "gold", wonder: "eldorado", fauna: "caiman" },
   guiana: { terrain: "jungle", resource: "gold", fauna: "macaw" },
   andes: { terrain: "mountain", resource: "metal", fauna: "llama" },
+  atacama: { terrain: "desert", resource: "stone", fauna: "llama" },
   cerrado: { terrain: "savanna", resource: "food", fauna: "jaguar" },
+  pantanal: { terrain: "jungle", resource: "silver", fauna: "jaguar" },
   brazil: { terrain: "jungle", resource: "wood", fauna: "jaguar" },
   pampas: { terrain: "grass", resource: "food", fauna: "llama" },
-  patagonia: { terrain: "steppe", resource: "stone", wonder: "megalith", fauna: "grizzly" },
+  plata: { terrain: "grass", resource: "silver", fauna: "llama" },
+  patagonia: { terrain: "steppe", resource: "stone", fauna: "grizzly" },
+  araucania: { terrain: "forest", resource: "wood", fauna: "grizzly" },
 
   fjords: { terrain: "mountain", resource: "metal", fauna: "boar" },
   highlands: { terrain: "mountain", resource: "metal", fauna: "boar" },
   gaul: { terrain: "grass", resource: "food", fauna: "boar" },
   rhine: { terrain: "forest", resource: "wood", fauna: "boar" },
   slavic: { terrain: "forest", resource: "wood", fauna: "boar" },
+  ruthenia: { terrain: "grass", resource: "food", fauna: "boar" },
   iberia: { terrain: "mediterranean", resource: "silver", fauna: "boar" },
   roma: { terrain: "mediterranean", resource: "stone", wonder: "pantheon", fauna: "direwolf" },
   balkans: { terrain: "mountain", resource: "metal", fauna: "boar" },
   volga: { terrain: "steppe", resource: "gold", fauna: "boar" },
+  ural: { terrain: "forest", resource: "wood", fauna: "boar" },
 
   maghreb: { terrain: "desert", resource: "gold", fauna: "camel" },
-  nile: { terrain: "desert", resource: "gold", wonder: "pyramids", fauna: "lion" },
+  sahara: { terrain: "desert", resource: "stone", fauna: "camel" },
+  gaetulia: { terrain: "desert", resource: "gold", fauna: "camel" },
+  nile: { terrain: "desert", resource: "gold", fauna: "camel" },
   guinea: { terrain: "jungle", resource: "gold", fauna: "elephant" },
+  kaabu: { terrain: "jungle", resource: "wood", fauna: "elephant" },
+  sahel: { terrain: "savanna", resource: "food", fauna: "elephant" },
+  kanem: { terrain: "savanna", resource: "gold", fauna: "elephant" },
   congo: { terrain: "jungle", resource: "wood", fauna: "gorilla" },
-  horn: { terrain: "savanna", resource: "food", fauna: "lion" },
+  teke: { terrain: "jungle", resource: "silver", fauna: "gorilla" },
+  kasai: { terrain: "jungle", resource: "gold", fauna: "gorilla" },
+  lunda: { terrain: "jungle", resource: "wood", fauna: "gorilla" },
+  horn: { terrain: "desert", resource: "stone", fauna: "lion" },
+  nubia: { terrain: "desert", resource: "gold", wonder: "pyramids", fauna: "lion" },
+  somali: { terrain: "desert", resource: "silver", fauna: "lion" },
   rift: { terrain: "savanna", resource: "silver", fauna: "giraffe" },
+  kilwa: { terrain: "savanna", resource: "food", fauna: "giraffe" },
+  nyasa: { terrain: "savanna", resource: "gold", fauna: "giraffe" },
+  yao: { terrain: "savanna", resource: "wood", fauna: "giraffe" },
   cape: { terrain: "mediterranean", resource: "gold", wonder: "lighthouse", fauna: "hippo" },
+  khoi: { terrain: "mediterranean", resource: "food", fauna: "hippo" },
+  namib: { terrain: "desert", resource: "gold", fauna: "hippo" },
+  damara: { terrain: "desert", resource: "stone", fauna: "hippo" },
   madagascar: { terrain: "jungle", resource: "wood", fauna: "lion" },
+  sakalava: { terrain: "jungle", resource: "gold", fauna: "lion" },
 
   anatolia: { terrain: "mountain", resource: "metal", fauna: "camel" },
   arabia: { terrain: "desert", resource: "gold", fauna: "camel" },
+  hejaz: { terrain: "mountain", resource: "stone", fauna: "camel" },
   gulf: { terrain: "desert", resource: "silver", fauna: "camel" },
   mesopotamia: { terrain: "grass", resource: "food", wonder: "gardens", fauna: "elephant" },
   persia: { terrain: "desert", resource: "gold", fauna: "camel" },
   armenia: { terrain: "mountain", resource: "metal", fauna: "camel" },
   media: { terrain: "mountain", resource: "gold", fauna: "camel" },
   steppe: { terrain: "steppe", resource: "gold", fauna: "camel" },
+  altai: { terrain: "mountain", resource: "metal", fauna: "camel" },
 
   siberia: { terrain: "tundra", resource: "metal", fauna: "siberian-tiger" },
+  baikal: { terrain: "forest", resource: "wood", fauna: "siberian-tiger" },
   nippon: { terrain: "forest", resource: "wood", fauna: "elephant" },
+  korea: { terrain: "mountain", resource: "metal", fauna: "elephant" },
   yakutia: { terrain: "ice", resource: "silver", fauna: "polar-bear" },
+  chukotka: { terrain: "ice", resource: "metal", fauna: "polar-bear" },
   gobi: { terrain: "desert", resource: "stone", fauna: "camel" },
+  tarim: { terrain: "desert", resource: "gold", fauna: "camel" },
   cathay: { terrain: "grass", resource: "food", wonder: "pagoda", fauna: "panda" },
+  jiangnan: { terrain: "grass", resource: "wood", fauna: "panda" },
   canton: { terrain: "jungle", resource: "wood", fauna: "elephant" },
+  yunnan: { terrain: "mountain", resource: "stone", fauna: "elephant" },
   india: { terrain: "savanna", resource: "gold", wonder: "stupa", fauna: "rhino" },
+  himalaya: { terrain: "mountain", resource: "stone", fauna: "rhino" },
   indochina: { terrain: "jungle", resource: "wood", fauna: "elephant" },
+  burma: { terrain: "jungle", resource: "stone", fauna: "elephant" },
 
   malaya: { terrain: "jungle", resource: "wood", fauna: "wild-dog" },
   papua: { terrain: "jungle", resource: "wood", fauna: "wild-dog" },
   outback: { terrain: "desert", resource: "gold", fauna: "wild-dog" },
+  nullarbor: { terrain: "desert", resource: "stone", fauna: "wild-dog" },
   westralia: { terrain: "desert", resource: "silver", fauna: "kangaroo" },
+  kimberley: { terrain: "savanna", resource: "gold", fauna: "kangaroo" },
   coral: { terrain: "jungle", resource: "gold", wonder: "reefshrine", fauna: "crocodile" },
   aotearoa: { terrain: "mountain", resource: "wood", fauna: "wild-dog" },
   polynesia: { terrain: "jungle", resource: "gold", fauna: "dolphin" },

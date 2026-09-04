@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { empireOf } from "@/lib/game/empires";
-import { hostDefense, ownedIds, standing } from "@/lib/game/engine";
+import { fortOf, hostDefense, jobsAt, ownedIds, standing } from "@/lib/game/engine";
 import {
-  CAPITAL_SRC,
+  BATTLE_UNIT_SRC,
   LANDSCAPE,
   OCEAN_LABELS,
   PROP_SRC,
+  SIEGE_SRC,
+  fortProp,
   type ResourceId,
   type WonderId,
 } from "@/lib/game/landscape";
-import { CAPITOL, type EmpireId, type GameState } from "@/lib/game/types";
+import { CONTINENT_NAMES, type GameState, type PulseEvent } from "@/lib/game/types";
 import { TERRITORIES, TERRITORY_BY_ID, WORLD_H, WORLD_W, landNeighbors } from "@/lib/game/world";
 import { cn } from "@/lib/utils";
 import { Hint } from "./Hint";
@@ -47,14 +49,14 @@ function Marker({
   y,
   w,
   h,
-  live,
+  className,
 }: {
   href: string;
   x: number;
   y: number;
   w: number;
   h: number;
-  live?: boolean;
+  className?: string;
 }) {
   return (
     <image
@@ -64,7 +66,7 @@ function Marker({
       width={w}
       height={h}
       preserveAspectRatio="xMidYMax meet"
-      className={cn("map-marker", live && "marker-live")}
+      className={cn("map-marker", className)}
     />
   );
 }
@@ -73,12 +75,14 @@ export function WorldMap({
   state,
   selected,
   targets,
+  fx = [],
   onSelect,
   onTap,
 }: {
   state: GameState;
   selected: string | null;
   targets: string[];
+  fx?: PulseEvent[];
   onSelect: (id: string) => void;
   onTap?: (picked: string | null) => void;
 }) {
@@ -341,7 +345,7 @@ export function WorldMap({
       >
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <image
-            href="/map/world.webp"
+            href="/map/world.webp?v=orig-restore"
             width={WORLD_W}
             height={WORLD_H}
             preserveAspectRatio="none"
@@ -372,6 +376,7 @@ export function WorldMap({
                   t.owner === "barbarian" ? "is-barbarian" : "is-owned",
                   selected === d.id && "is-selected",
                   targetSet.has(d.id) && selected !== d.id && "is-target",
+                  t.besiegedFrom && "is-siege",
                   flashes[d.id] ? "is-captured" : "",
                 )}
               >
@@ -393,6 +398,7 @@ export function WorldMap({
                   t.owner === "barbarian" ? "is-barbarian" : "is-owned",
                   isSel && "is-selected",
                   targetSet.has(d.id) && !isSel && "is-target",
+                  t.besiegedFrom && "is-siege",
                 )}
               />
             );
@@ -447,6 +453,91 @@ export function WorldMap({
                 );
               })
             : null}
+          {(state.marches ?? []).map((m) => {
+            const a = TERRITORY_BY_ID[m.from];
+            const b = TERRITORY_BY_ID[m.to];
+            if (!a || !b) return null;
+            const mx = a.labelX + (b.labelX - a.labelX) * 0.42;
+            const my = a.labelY + (b.labelY - a.labelY) * 0.42;
+            const icon =
+              m.dragons > 0
+                ? BATTLE_UNIT_SRC.dragon
+                : m.beasts > 0
+                  ? PROP_SRC.knight
+                  : m.knights > 0
+                    ? BATTLE_UNIT_SRC.knight
+                    : m.bowmen > 0
+                      ? BATTLE_UNIT_SRC.bowman
+                      : BATTLE_UNIT_SRC.levy;
+            return (
+              <g key={`col-${m.id}`} className="map-column">
+                <line x1={a.labelX} y1={a.labelY} x2={b.labelX} y2={b.labelY} className="map-march" />
+                <image href={icon} x={mx - 7} y={my - 12} width={14} height={14} className="map-column-icon" />
+              </g>
+            );
+          })}
+          {TERRITORIES.map((d) => {
+            const t = state.territories[d.id]!;
+            if (!t.besiegedFrom) return null;
+            const from = TERRITORY_BY_ID[t.besiegedFrom];
+            if (!from) return null;
+            const mx = from.labelX + (d.labelX - from.labelX) * 0.55;
+            const my = from.labelY + (d.labelY - from.labelY) * 0.55;
+            const labelFs = Math.max(5.5, 8 / view.k);
+            return (
+              <g key={`siege-${d.id}`} className="map-siege">
+                <line
+                  x1={from.labelX}
+                  y1={from.labelY}
+                  x2={d.labelX}
+                  y2={d.labelY}
+                  className="map-siege-line"
+                />
+                <ellipse cx={d.labelX} cy={d.labelY + 4} rx={24} ry={14} className="map-siege-ring" />
+                <image
+                  href={SIEGE_SRC.ram}
+                  x={mx - 8}
+                  y={my - 8}
+                  width={16}
+                  height={14}
+                  className="map-siege-mark"
+                />
+                <text
+                  x={d.labelX}
+                  y={d.labelY - 16}
+                  className="map-siege-label"
+                  textAnchor="middle"
+                  fontSize={labelFs}
+                  strokeWidth={Math.max(1.1, 2.2 / view.k)}
+                >
+                  SIEGE
+                </text>
+              </g>
+            );
+          })}
+          {fx.map((ev, i) => {
+            const dest = TERRITORY_BY_ID[ev.toId];
+            if (!dest) return null;
+            if (ev.type === "march" && ev.fromId) {
+              const origin = TERRITORY_BY_ID[ev.fromId];
+              if (!origin) return null;
+              return (
+                <g key={`fx-m-${i}-${ev.toId}`} className="map-fx-march">
+                  <line x1={origin.labelX} y1={origin.labelY} x2={dest.labelX} y2={dest.labelY} className="map-march is-live" />
+                  <circle className="map-fx-dot" r={4}>
+                    <animate attributeName="cx" from={origin.labelX} to={dest.labelX} dur="0.9s" fill="freeze" />
+                    <animate attributeName="cy" from={origin.labelY} to={dest.labelY} dur="0.9s" fill="freeze" />
+                  </circle>
+                </g>
+              );
+            }
+            return (
+              <g key={`fx-${i}-${ev.toId}`} className="map-fx-pulse">
+                <circle cx={dest.labelX} cy={dest.labelY} r={6} className="map-pulse-ring" />
+                <circle cx={dest.labelX} cy={dest.labelY} r={3} className="map-pulse-core" />
+              </g>
+            );
+          })}
           {OCEAN_LABELS.map((o) => (
             <text
               key={`${o.name}-${o.x}`}
@@ -463,46 +554,43 @@ export function WorldMap({
             const t = state.territories[d.id]!;
             const land = LANDSCAPE[d.id];
             const owned = t.owner !== "barbarian";
-            const founder = (Object.entries(CAPITOL) as [EmpireId, string][]).find(([, id]) => id === d.id)?.[0];
             const cx = d.labelX;
             const cy = d.labelY;
-            const isSel = selected === d.id;
             const wonder = land?.wonder as WonderId | undefined;
             const resource = land?.resource as ResourceId | undefined;
             const house = t.owner === "barbarian" ? null : empireOf(state.players[t.owner]!.empire);
-            const walled = Boolean(t.castle);
-            const cityW = founder ? 30 : walled ? 26 : owned ? 20 : 16;
+            const fort = fortOf(t);
+            const walled = fort >= 1;
+            const keep = fort >= 3;
+            const cityW = keep ? 16 : walled ? 15 : owned ? 18 : 14;
             const cityH = cityW;
-            const seat = founder
-              ? CAPITAL_SRC[founder]
-              : !owned
-                ? PROP_SRC.camp
-                : walled
-                  ? PROP_SRC.city
-                  : PROP_SRC.town;
+            const wallW = keep ? 52 : 44;
+            const wallH = keep ? 28 : 22;
+            const seat = !owned ? PROP_SRC.camp : keep ? PROP_SRC.city : owned ? PROP_SRC.town : PROP_SRC.camp;
             const showWorks = view.k >= 1.15;
             const glow = house?.color ?? "#c4a574";
+            const work = jobsAt(state, d.id);
             return (
               <g key={`m-${d.id}`} className="map-markers">
                 <ellipse
                   className="map-seat-glow"
                   cx={cx}
                   cy={cy + 4}
-                  rx={cityW * 0.62}
-                  ry={cityH * 0.28}
+                  rx={(walled ? wallW : cityW) * 0.42}
+                  ry={(walled ? wallH : cityH) * 0.18}
                   fill={glow}
                 />
                 {walled ? (
-                  <Marker href={PROP_SRC.walls} x={cx} y={cy + 12} w={cityW + 18} h={Math.round(cityH * 0.85)} />
+                  <Marker href={fortProp(fort)} x={cx} y={cy + 12} w={wallW} h={wallH} />
                 ) : null}
-                <Marker href={seat} x={cx} y={cy + 8} w={cityW} h={cityH} live={Boolean(founder) || isSel} />
+                <Marker href={seat} x={cx} y={cy + (walled ? 10 : 8)} w={cityW} h={cityH} />
                 {t.port ? (
                   <Marker href={PROP_SRC.port} x={cx + cityW * 0.7} y={cy + 16} w={24} h={18} />
                 ) : null}
                 {t.dragons > 0 ? (
-                  <Marker href={PROP_SRC.dragon} x={cx - 2} y={cy - 10} w={20} h={18} live />
+                  <Marker href={PROP_SRC.dragon} x={cx - 2} y={cy - 10} w={20} h={18} />
                 ) : null}
-                {wonder && !founder ? (
+                {wonder ? (
                   <Marker href={PROP_SRC[wonder]} x={cx - 22} y={cy - 4} w={22} h={20} />
                 ) : null}
                 {showWorks && t.mine ? <Marker href={PROP_SRC.mine} x={cx - cityW * 0.7} y={cy + 16} w={18} h={16} /> : null}
@@ -511,6 +599,20 @@ export function WorldMap({
                 {showWorks && t.road ? <Marker href={PROP_SRC.road} x={cx - 10} y={cy + 18} w={12} h={10} /> : null}
                 {resource ? (
                   <Marker href={PROP_SRC[resource]} x={cx + 10} y={cy - 12} w={14} h={14} />
+                ) : null}
+                {work.length > 0 ? (
+                  <g className="map-job-pip" data-jobs={d.id}>
+                    <circle cx={cx - 16} cy={cy + 6} r={4.2} className="map-job-pip-disc" />
+                    <text
+                      x={cx - 16}
+                      y={cy + 8.2}
+                      textAnchor="middle"
+                      className="map-job-pip-count"
+                      fontSize={Math.max(4.5, 6.5 / view.k)}
+                    >
+                      {work.length}
+                    </text>
+                  </g>
                 ) : null}
               </g>
             );
@@ -521,19 +623,22 @@ export function WorldMap({
             const host = standing(t);
             const hpClass = hp <= 5 ? "is-weak" : hp >= 10 ? "is-stout" : "is-mid";
             const fs = Math.max(6, 10 / view.k);
+            const nameFs = Math.max(5.5, 11 / view.k);
             const infoFs = Math.max(4.5, 7.5 / view.k);
-            const rich = LANDSCAPE[d.id]?.resource;
-            const bits = [
-              `${host} host`,
-              t.castle ? "walls" : t.owner === "barbarian" ? "tribe" : "city",
-              rich ?? null,
-            ].filter(Boolean);
+            const nameY = d.labelY + 22 / view.k;
+            const regionY = nameY + nameFs * 0.4 + infoFs + Math.max(3.5, 7 / view.k);
+            const region = CONTINENT_NAMES[d.continent];
             return (
               <g key={`l-${d.id}`} className="map-stat">
                 <title>
-                  {d.name}: defence {hp}, host {host}
-                  {t.castle ? ", walls" : t.owner === "barbarian" ? ", tribe" : ", city"}
-                  {rich ? `, ${rich}` : ""}
+                  {d.name}: {region} · defence {hp}, host {host}
+                  {t.castle || fortOf(t) > 0
+                    ? `, ${fortOf(t) >= 3 ? "keep" : fortOf(t) >= 2 ? "stone walls" : "wooden walls"}`
+                    : t.owner === "barbarian"
+                      ? ", tribe"
+                      : ", city"}
+                  {t.besiegedFrom ? `, under siege from ${TERRITORY_BY_ID[t.besiegedFrom]?.name ?? "a neighbour"}` : ""}
+                  {jobsAt(state, d.id).length ? `, ${jobsAt(state, d.id).length} works underway` : ""}
                 </title>
                 <text
                   x={d.labelX + 14}
@@ -547,23 +652,23 @@ export function WorldMap({
                 </text>
                 <text
                   x={d.labelX}
-                  y={d.labelY + 22 / view.k}
+                  y={nameY}
                   className="map-label"
                   textAnchor="middle"
-                  fontSize={Math.max(5.5, 11 / view.k)}
+                  fontSize={nameFs}
                   strokeWidth={Math.max(1.2, 2.6 / view.k)}
                 >
                   {d.name.toUpperCase()}
                 </text>
                 <text
                   x={d.labelX}
-                  y={d.labelY + 32 / view.k}
+                  y={regionY}
                   className="map-info"
                   textAnchor="middle"
                   fontSize={infoFs}
                   strokeWidth={Math.max(1, 2 / view.k)}
                 >
-                  {bits.join(" · ")}
+                  {region}
                 </text>
               </g>
             );

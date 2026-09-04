@@ -31,7 +31,7 @@ export function Hud({ state, onEnd, onQuit }: { state: GameState; onEnd: () => v
             {myTurn ? `Your watch — ${house.name}` : `${empireOf(whose.empire).name}’s watch`}
             <span className="text-muted">
               {" "}
-              · {age} · Turn {state.clock.turn}/{TURN_LIMIT} · {cont} continents · {lands} lands · {pop} citizens
+              · {age} · Turn {state.clock.turn}/{TURN_LIMIT} · {cont} regions · {lands} lands · {pop} citizens
               {leading ? " · leading" : ""}
             </span>
           </p>
