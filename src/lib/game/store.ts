@@ -115,10 +115,14 @@ function siegeFrom(t: { rams?: number; catapults?: number; ladders?: number; tow
   return siegeBringOf(t as Parameters<typeof siegeBringOf>[0]);
 }
 
-function resetSend(t: { levy: number; bowmen?: number; beasts?: number; rams?: number; catapults?: number; ladders?: number; towers?: number } | undefined) {
+function resetSend(
+  t: { levy: number; bowmen?: number; beasts?: number; rams?: number; catapults?: number; ladders?: number; towers?: number } | undefined,
+  keep = 0,
+) {
   const gear = t ? siegeFrom(t) : { rams: 0, catapults: 0, ladders: 0, towers: 0 };
+  const levy = t?.levy ?? 0;
   return {
-    sendLevy: Math.max(1, t?.levy ?? 1),
+    sendLevy: Math.max(0, levy - keep),
     sendBowmen: t?.bowmen ?? 0,
     sendKnights: 0,
     sendDragons: 0,
@@ -128,6 +132,16 @@ function resetSend(t: { levy: number; bowmen?: number; beasts?: number; rams?: n
     sendLadders: gear.ladders,
     sendTowers: gear.towers,
   };
+}
+
+function keepOn(state: GameState, id: string | null | undefined): number {
+  if (!id || !state.players[0]) return 0;
+  return empireOf(state.players[0].empire).capitol === id ? 2 : 0;
+}
+
+function sendFor(state: GameState, id: string | null | undefined) {
+  if (!id) return resetSend(undefined);
+  return resetSend(state.territories[id], keepOn(state, id));
 }
 
 function composeAttack(
@@ -184,20 +198,19 @@ export const useGame = create<GameStore>((set, get) => ({
     clearSave();
     const cap = empireOf(opts.empire).capitol;
     const ready = setMarchFrom(state, cap);
-    const t = ready.territories[cap];
     saveGame(ready);
     set({
       state: ready,
       selected: cap,
-      ...resetSend(t),
+      ...sendFor(ready, cap),
       pendingOccupy: null,
       pendingAttack: null,
       pendingBattle: null,
       pendingArrival: null,
       pendingWatch: [
         "Watch 1 begins.",
-        "Stone walls hold your seat. Every other land wakes behind wooden palisades.",
-        "Training and marches take a watch. You may send several columns in the same watch.",
+        "Stone walls hold your seat. Tribal lands wake as open camps.",
+        "Training and marches take a watch. Leave a watch on the seat — an empty capital still fights, and you will see the battle.",
       ],
       fx: [],
     });
@@ -209,7 +222,7 @@ export const useGame = create<GameStore>((set, get) => ({
     set({
       state: setMarchFrom(loaded, cap),
       selected: cap,
-      ...resetSend(loaded.territories[cap]),
+      ...sendFor(loaded, cap),
       pendingOccupy: null,
       pendingAttack: null,
       pendingBattle: null,
@@ -243,7 +256,7 @@ export const useGame = create<GameStore>((set, get) => ({
     const campId = t.besiegedFrom;
     const camp = campId ? state.territories[campId] : null;
     if (campId && camp && camp.owner === human.id && state.clock.currentPlayer === 0 && campId !== id) {
-      const ready = resetSend(camp);
+      const ready = sendFor(state, campId);
       set({
         selected: campId,
         pendingAttack: composeAttack(camp, campId, id, {
@@ -284,7 +297,7 @@ export const useGame = create<GameStore>((set, get) => ({
       set({
         selected: id,
         state: next,
-        ...resetSend(t),
+        ...sendFor(next, id),
         pendingAttack: null,
         pendingBattle: null,
       });
@@ -304,7 +317,7 @@ export const useGame = create<GameStore>((set, get) => ({
       set({
         selected: id,
         state: persist(setMarchFrom(state, id)),
-        ...resetSend(t),
+        ...sendFor(state, id),
       });
       return;
     }
@@ -422,7 +435,7 @@ export const useGame = create<GameStore>((set, get) => ({
     sfx("tick");
     set({
       state: persist(next),
-      ...(selected ? resetSend(next.territories[selected]) : {}),
+      ...(selected ? sendFor(next, selected) : {}),
     });
   },
   march: () => {
@@ -435,7 +448,7 @@ export const useGame = create<GameStore>((set, get) => ({
       dragons: sendDragons,
       beasts: sendBeasts,
     });
-    set({ state: persist(next), ...resetSend(next.territories[selected]) });
+    set({ state: persist(next), ...sendFor(next, selected) });
   },
   play: (card) => {
     const { state, selected } = get();
@@ -452,7 +465,7 @@ export const useGame = create<GameStore>((set, get) => ({
       state: next,
       pendingOccupy: null,
       selected: pendingOccupy.to,
-      ...resetSend(t),
+      ...sendFor(next, pendingOccupy.to),
     });
   },
   confirmAttack: () => {
@@ -478,7 +491,7 @@ export const useGame = create<GameStore>((set, get) => ({
     set({
       state: persist(setMarchFrom(next, fromId)),
       selected: fromId,
-      ...resetSend(next.territories[fromId]),
+      ...sendFor(next, fromId),
       pendingAttack: null,
       pendingBattle: null,
       pendingOccupy: null,
@@ -498,7 +511,7 @@ export const useGame = create<GameStore>((set, get) => ({
       state: setMarchFrom(next, pendingAttack.from),
       pendingAttack,
       selected: pendingAttack.from,
-      ...resetSend(next.territories[pendingAttack.from]),
+      ...sendFor(next, pendingAttack.from),
       fx: [
         {
           type: "build",
@@ -541,7 +554,7 @@ export const useGame = create<GameStore>((set, get) => ({
     set({
       state: persist(occupy ? setMarchFrom(next, toId) : ownedCap ? setMarchFrom(next, ownedCap) : next),
       selected: occupy ? toId : ownedCap,
-      ...(occupy ? resetSend(next.territories[toId]) : resetSend(ownedCap ? next.territories[ownedCap] : undefined)),
+      ...(occupy ? sendFor(next, toId) : sendFor(next, ownedCap)),
       pendingBattle: more.battle,
       pendingArrival: more.battle ? (next.arrivals ?? [])[0] ?? null : nextIncoming && next.clock.currentPlayer === 0 ? nextIncoming : null,
       pendingAttack: null,
@@ -560,7 +573,7 @@ export const useGame = create<GameStore>((set, get) => ({
           pendingBattle: null,
           pendingArrival: null,
           selected: pendingBattle.fromId,
-          ...resetSend(next.territories[pendingBattle.fromId]),
+          ...sendFor(next, pendingBattle.fromId),
         });
         return;
       }
@@ -576,7 +589,7 @@ export const useGame = create<GameStore>((set, get) => ({
       selected: pendingBattle.fromId,
       pendingBattle: null,
       pendingArrival: null,
-      ...resetSend(next.territories[pendingBattle.fromId]),
+      ...sendFor(next, pendingBattle.fromId),
     });
   },
   dismissWatch: () => {
@@ -612,7 +625,7 @@ export const useGame = create<GameStore>((set, get) => ({
     set({
       state: persist(ownedCap ? setMarchFrom(next, ownedCap) : next),
       selected: ownedCap,
-      ...resetSend(ownedCap ? next.territories[ownedCap] : undefined),
+      ...sendFor(next, ownedCap),
       pendingOccupy: null,
       pendingAttack: null,
       pendingBattle: paused.battle,

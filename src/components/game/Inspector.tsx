@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { empireOf } from "@/lib/game/empires";
-import { canRaiseSiege, defenseStrength, forceStrength, fortOf, hasKindJob, jobsAt, jobsOfKind, legalMarchTargets, marchesFrom, oddsLabel, shipsCap, siegeTargetOf, standing, worksCost, worksRank } from "@/lib/game/engine";
+import { canRaiseSiege, cityWatch, defenseStrength, forceStrength, fortOf, hasKindJob, jobsAt, jobsOfKind, legalMarchTargets, marchesFrom, oddsLabel, shipsCap, siegeTargetOf, standing, worksCost, worksRank } from "@/lib/game/engine";
 import type { EmpireId, GameState, Job, JobKind, UnitKind } from "@/lib/game/types";
 import { CAPITOL, CONTINENT_NAMES, DRAGON_CAP, FORT_CAP, FORT_LABEL, FORT_TURNS, SCORPION_CAP, SIEGE_CAP, SIEGE_KINDS, SIEGE_LABEL, SIEGE_TURNS, UNIT_COST, UNIT_LABEL, UNIT_TURNS, WORKS_CAP, isSiegeKind, isTrainKind } from "@/lib/game/types";
 import { TERRITORY_BY_ID, seaNeighbors } from "@/lib/game/world";
@@ -13,15 +13,15 @@ import { Hint } from "./Hint";
 export type ActionKind = "train" | "march" | "build";
 
 const TRAIN_HINT = {
-  levy: "Raise a swordman. Best in the melee. Attack 2, defence 1. Gold and metal. Takes 1 watch. Silver wages with the rest of the infantry.",
-  bowman: "Raise a bowman. Fragile if hit, long range. On a keep they rain arrows on attackers. Gold, timber and metal. Takes 1 watch.",
-  knight: "Raise a mounted knight. Most effective riding swordmen down. Attack 2, defence 2. Gold and metal. Takes 2 watches.",
+  levy: "Raise a warrior. Best in the melee. Attack 2, defence 1. Gold and metal. Takes 1 watch. Silver wages with the rest of the infantry.",
+  bowman: "Raise an archer. Fragile if hit, long range. On a keep they rain arrows on attackers. Gold, timber and metal. Takes 1 watch.",
+  knight: "Raise a mounted knight. Most effective riding warriors down. Attack 2, defence 2. Gold and metal. Takes 2 watches.",
   dragon: "Raise a dragon. It tears walls and defences and roams the field from every side. Only another dragon or a scorpion can wound it. 25 gold. One per province. Takes 5 watches.",
 } as const;
 
 const BUILD_HINT: Record<string, string> = {
   port: "A harbour on the coast. Pays trade, and can be improved twice with gold for more trade.",
-  castle: "Every province has wooden walls. Improve them to stone walls, then raise a wooden keep, then a stone keep. Capitals start with stone walls.",
+  castle: "Camps you take have no walls. Raise wooden walls, then stone walls, then a wooden keep, then a stone keep. Capitals start with stone walls.",
   market: "A trade post. Improve with gold up to rank III for more trade.",
   mine: "Inland goldworks. Improve with gold to raise tribute and silver from silver veins.",
   ship: "Lay another keel. Improved harbours hold more (2 / 4 / 6). Each ship sails with a column and pays two trade gold. Sea landings arrive next watch, same as land marches.",
@@ -30,12 +30,12 @@ const BUILD_HINT: Record<string, string> = {
   ram: "Timber a ram while a neighbour is under siege. Free, one watch. It knocks the gate down — nothing else.",
   catapult: "Frame a catapult while a neighbour is under siege. Free, five watches. It weakens their defences from a distance before you assault.",
   ladder: "Cut ladders while a neighbour is under siege. Free, one watch. They scale the wall without breaking it.",
-  tower: "Raise a siege tower while a neighbour is under siege. Free, three watches. It carries up to 20 swordmen, or 5 knights, or 5 beasts over the wall.",
+  tower: "Raise a siege tower while a neighbour is under siege. Free, three watches. It carries up to 20 warriors, or 5 knights, or 5 beasts over the wall.",
   scorpion: "Raise a scorpion on the walls. The only ground engine that can wound a dragon. Gold, timber and metal.",
 };
 
 const CARD_HINT: Record<string, string> = {
-  levy: "Call two swordmen in this city at once.",
+  levy: "Call two warriors in this city at once.",
   forge: "Gain 4 gold, 2 stone and 2 metal.",
   tide: "Gain 4 timber.",
   raid: "Strike two from a selected enemy host.",
@@ -140,9 +140,10 @@ export function ProvinceBanner({ state, selected }: { state: GameState; selected
           : "Stout camp — will raid neighbouring empires if left."
       : null,
     isCap ? "Capital mint — pays silver each watch" : null,
+    cityWatch(t) > 0 ? `city watch of ${cityWatch(t)} holds the walls` : null,
     land.resource
-      ? `rich in ${RESOURCE_LABEL[land.resource]}${t.market || t.port ? " · trade bonus" : " · raise a market or port to trade it"}`
-      : null,
+      ? `abundance of ${RESOURCE_LABEL[land.resource]} — pays extra each watch${t.market || t.port ? " · trade bonus" : ""}`
+      : "pays a little of every yield",
     t.besiegedFrom ? `Under siege from ${TERRITORY_BY_ID[t.besiegedFrom]?.name ?? "a neighbour"}` : null,
     siegeTargetOf(state, selected) ? `Sieging ${TERRITORY_BY_ID[siegeTargetOf(state, selected)!]!.name}` : null,
   ]
@@ -361,7 +362,7 @@ export function ActionSheet({
               <span key={`${c}-${i}`} className="inline-flex items-center gap-1">
                 <Hint text={CARD_HINT[c] ?? "Play this card."} />
                 <Button size="sm" variant="ghost" onClick={() => onPlay(c)}>
-                  {c === "levy" ? "swordmen" : c}
+                  {c === "levy" ? "warriors" : c}
                 </Button>
               </span>
             ))}
@@ -397,13 +398,8 @@ export function ActionSheet({
       { kind: "road", label: "Road", disabled: t.road || hasKindJob(state, selected, "road") },
       { kind: "farm", label: labelOf("farm", "Farm"), disabled: rankOf("farm") >= WORKS_CAP || hasKindJob(state, selected, "farm") },
       { kind: "scorpion", label: (t.scorpions ?? 0) > 0 ? `Scorpion · ${t.scorpions}` : "Scorpion", disabled: hasKindJob(state, selected, "scorpion") || (t.scorpions ?? 0) >= SCORPION_CAP },
-      { kind: "ram", label: (t.rams ?? 0) > 0 ? `Ram · ${t.rams}` : "Ram", disabled: (t.rams ?? 0) + jobsOfKind(state, selected, "ram").length >= SIEGE_CAP || !sieging },
-      { kind: "catapult", label: (t.catapults ?? 0) > 0 ? `Catapult · ${t.catapults}` : "Catapult", disabled: (t.catapults ?? 0) + jobsOfKind(state, selected, "catapult").length >= SIEGE_CAP || !sieging },
-      { kind: "ladder", label: (t.ladders ?? 0) > 0 ? `Ladders · ${t.ladders}` : "Ladders", disabled: (t.ladders ?? 0) + jobsOfKind(state, selected, "ladder").length >= SIEGE_CAP || !sieging },
-      { kind: "tower", label: (t.towers ?? 0) > 0 ? `Tower · ${t.towers}` : "Siege tower", disabled: (t.towers ?? 0) + jobsOfKind(state, selected, "tower").length >= SIEGE_CAP || !sieging },
     ];
     const works = jobs.filter((j) => !isSiegeKind(j.kind));
-    const siege = jobs.filter((j) => isSiegeKind(j.kind));
     const row = (list: typeof jobs) =>
       list.map((j) => (
         <div key={j.kind} className="flex flex-col gap-1">
@@ -451,13 +447,9 @@ export function ActionSheet({
       <div className="panel action-sheet flex flex-col gap-1.5">
         <p className="text-[10px] tracking-[0.16em] text-muted uppercase">Build</p>
         <div className="grid grid-cols-2 gap-1.5">{row(works)}</div>
-        <p className="mt-1 text-[10px] tracking-[0.16em] text-muted uppercase">Siege engines</p>
         {sieging && mark ? (
-          <p className="text-[10px] text-muted">Free while you siege {TERRITORY_BY_ID[mark]!.name}. They take time, not gold.</p>
-        ) : (
-          <p className="text-[10px] text-muted">Lay siege on a neighbour first — then rams, ladders, towers and catapults raise here for free.</p>
-        )}
-        <div className="grid grid-cols-2 gap-1.5">{row(siege)}</div>
+          <p className="mt-1 text-[10px] text-muted">Siege of {TERRITORY_BY_ID[mark]!.name} is open — raise rams, ladders, towers and catapults on the siege screen.</p>
+        ) : null}
       </div>
     );
   }
@@ -478,10 +470,17 @@ export function ActionSheet({
         Selected {sent} of {available}
         <span className="text-muted"> · {stay} stay</span>
       </p>
+      {isCap && stay < 2 ? (
+        <p className="text-[10px] text-danger">
+          The seat will stand empty. A city watch holds the walls — you will still fight if tribes come.
+        </p>
+      ) : stay < 1 ? (
+        <p className="text-[10px] text-danger">This land will stand empty. Tribes overrun an unwalled host of one.</p>
+      ) : null}
       <label className="flex items-center justify-between gap-2 text-xs">
         <span className="inline-flex items-center gap-1">
           <UnitMark kind="levy" />
-          Swordmen
+          Warriors
         </span>
         <input
           className="flex-1"
@@ -501,7 +500,7 @@ export function ActionSheet({
       <label className="flex items-center justify-between gap-2 text-xs">
         <span className="inline-flex items-center gap-1">
           <UnitMark kind="bowman" />
-          Bowmen
+          Archers
         </span>
         <input
           className="flex-1"
@@ -578,7 +577,7 @@ export function ActionSheet({
           {sendDragons}/{t.dragons}
         </span>
       </label>
-      {SIEGE_KINDS.some((k) => (k === "ram" ? t.rams : k === "catapult" ? t.catapults : k === "ladder" ? t.ladders : t.towers) > 0) ? (
+      {siegeTargetOf(state, selected) && SIEGE_KINDS.some((k) => (k === "ram" ? t.rams : k === "catapult" ? t.catapults : k === "ladder" ? t.ladders : t.towers) > 0) ? (
         <div className="grid grid-cols-2 gap-1.5">
           {SIEGE_KINDS.map((kind) => {
             const have = kind === "ram" ? t.rams ?? 0 : kind === "catapult" ? t.catapults ?? 0 : kind === "ladder" ? t.ladders ?? 0 : t.towers ?? 0;
@@ -607,9 +606,7 @@ export function ActionSheet({
             );
           })}
         </div>
-      ) : (
-        <p className="text-[10px] text-muted">No siege engines here. Lay siege on a neighbour, then raise rams, ladders, a tower or catapults for free.</p>
-      )}
+      ) : null}
       <p className="text-[10px] text-muted">Tap a neighbour on the map. Columns arrive next watch — send several in the same watch if you wish.</p>
       {friends.length ? (
         <div className="flex flex-wrap gap-1">
@@ -705,7 +702,7 @@ export function OccupySheet({
         <p className="text-xs text-muted">The whole host stays in {toMeta.name}.</p>
       ) : (
         <div className="space-y-1">
-          <p className="text-xs text-muted">How many return to {fromMeta.name}. At least one swordman stays.</p>
+          <p className="text-xs text-muted">How many return to {fromMeta.name}. At least one warrior stays.</p>
           <p className="text-xs tabular-nums text-fg">
             Sending {levy + bowmen + knights + dragons + beasts} of {maxLevy + (to.bowmen ?? 0) + to.knights + to.dragons + (to.beasts ?? 0)}
             <span className="text-muted"> · rest stay</span>
@@ -713,7 +710,7 @@ export function OccupySheet({
           <label className="flex items-center justify-between gap-2 text-xs">
             <span className="inline-flex items-center gap-1">
               <UnitMark kind="levy" />
-              Swordmen
+              Warriors
             </span>
             <input
               className="flex-1"
@@ -733,7 +730,7 @@ export function OccupySheet({
           <label className="flex items-center justify-between gap-2 text-xs">
             <span className="inline-flex items-center gap-1">
               <UnitMark kind="bowman" />
-              Bowmen
+              Archers
             </span>
             <input
               className="flex-1"

@@ -3,7 +3,7 @@ import { beastOf, landscapeOf, type TerrainId } from "./landscape";
 import type { GameState, HostForce, SiegeKind, SiegeStock, TerritoryState, UnitKind } from "./types";
 import { EMPTY_HOST, SCORPION_CAP, SIEGE_LABEL, TOWER_CARGO, UNIT_LABEL_PLURAL } from "./types";
 import { TERRITORY_BY_ID } from "./world";
-import { isBarbarian, worksRank as castleRankOf } from "./engine";
+import { cityWatch, isBarbarian, worksRank as castleRankOf } from "./engine";
 
 export const RAID_W = 720;
 export const RAID_H = 480;
@@ -46,6 +46,7 @@ export interface RaidUnit {
   onWall: boolean;
   cargo: HostForce | null;
   roam: number;
+  facing: number;
 }
 
 export interface RaidBuilding {
@@ -492,6 +493,7 @@ function makeUnit(raid: RaidState, side: BattleSide, kind: RaidKind, x: number, 
     onWall,
     cargo: null,
     roam: 0,
+    facing: Math.atan2(RAID_CY - y, RAID_CX - x),
   };
 }
 
@@ -527,6 +529,7 @@ export function openRaid(
   const defName = to.owner === "barbarian" ? "Independent tribes" : empireOf(state.players[to.owner]!.empire).name;
   const atkBeast = from.owner === "barbarian" ? null : beastOf(state.players[from.owner]!.empire);
   const seed = (state.seed + state.clock.turn * 997 + toId.length * 13) >>> 0;
+  const watch = cityWatch(to);
   const raid: RaidState = {
     fromId,
     toId,
@@ -541,7 +544,7 @@ export function openRaid(
     shots: [],
     sparks: [],
     garrison: {
-      levy: to.levy,
+      levy: to.levy + watch,
       bowmen: to.bowmen ?? 0,
       knights: to.knights,
       dragons: to.dragons,
@@ -557,7 +560,10 @@ export function openRaid(
     nextId: 1,
     seed,
     rng: seed || 1,
-    log: [`${atkName} fall on ${toName} from ${fromName}. ${defName} hold the ground.`],
+    log: [
+      `${atkName} fall on ${toName} from ${fromName}. ${defName} hold the ground.`,
+      ...(watch > 0 && to.levy < watch ? ["The city watch stands the walls."] : []),
+    ],
     trauma: 0,
     walk: new Uint8Array(RAID_COLS * RAID_ROWS),
     walkDirty: true,
@@ -1085,6 +1091,7 @@ function moveToward(u: RaidUnit, x: number, y: number, dt: number, raid: RaidSta
   } else if (!u.air) {
     u.path = [];
   }
+  if (nx !== u.x || ny !== u.y) u.facing = Math.atan2(ny - u.y, nx - u.x);
   u.x = clamp(nx, 12, RAID_W - 12);
   u.y = clamp(ny, 12, RAID_H - 12);
 }
@@ -1135,7 +1142,7 @@ function steerUnit(raid: RaidState, u: RaidUnit, dt: number) {
           u.dmg = STATS.bowman.dmg + WALL_BOW_DMG;
           u.x = c.x;
           u.y = c.y;
-          raid.log.push("Bowmen take the wall and rain arrows.");
+          raid.log.push("Archers take the wall and rain arrows.");
         } else {
           moveToward(u, c.x, c.y, dt, raid);
         }

@@ -19,6 +19,7 @@ import {
   raidKindsLeft,
   raidOutcome,
   raidWinner,
+  runRaid,
   stepRaid,
   type RaidKind,
   type RaidState,
@@ -36,6 +37,32 @@ function kindLabel(kind: RaidKind, beastName: string) {
   if (kind === "beast") return beastName;
   if (kind === "levy" || kind === "bowman" || kind === "knight" || kind === "dragon") return UNIT_LABEL_PLURAL[kind];
   return SIEGE_LABEL[kind];
+}
+
+function battleTips(raid: RaidState, watching: boolean): string[] {
+  if (watching) return ["Hold the walls. Archers on the keep rain arrows. Scorpions wound dragons."];
+  if (raid.phase === "over") {
+    return [raid.keepDestroyed ? "The keep is yours. Leave the field to take the land." : "The assault broke. Survivors fall back next watch."];
+  }
+  const tips: string[] = [];
+  if (raid.phase === "deploy") {
+    tips.push("Place hosts on the grass outside the ring. Smash the keep before the clock runs out.");
+    if (raid.stock.rams > 0) tips.push("Rams only break the gate — put them on the road to the gate.");
+    else if (raid.stock.ladders > 0) tips.push("Ladders open a climb. They do not knock the wall down.");
+    else if (raid.stock.towers > 0) tips.push("A siege tower spills warriors, knights or beasts over the wall.");
+    else if (raid.stock.catapults > 0) tips.push("Catapults stand back and weaken walls and the keep from range.");
+    else if (raid.stock.dragons > 0) tips.push("Dragons fly the ring. Burn scorpions first — they can wound a dragon.");
+    else if ((raid.stock.bowmen ?? 0) > 0) tips.push("Archers shoot from outside. Do not walk them into the melee.");
+    else if (raid.stock.knights > 0) tips.push("Knights ride warriors down. Send them at infantry, not stone.");
+    else tips.push("Warriors take the melee. Auto resolve if you would rather skip the field.");
+  } else {
+    tips.push("Fifty percent destruction or a fallen keep is one star. Both is two. A razed village is three.");
+    const scorpion = raid.buildings.some((b) => b.kind === "scorpion" && b.hp > 0);
+    if (scorpion && raid.units.some((u) => u.kind === "dragon" && u.hp > 0 && u.side === "atk")) {
+      tips.push("A scorpion still stands. Keep the dragon off it or burn it first.");
+    }
+  }
+  return tips.slice(0, 2);
 }
 
 function stockOf(raid: RaidState, kind: RaidKind) {
@@ -199,6 +226,13 @@ export function BattleScreen({
                     ? "Tap a host, then tap the grass outside the walls."
                     : "Troops path on their own. Smash the keep to take the land."}
             </p>
+            {!watching ? (
+              <ul className="raid-tips">
+                {battleTips(raidRef.current, watching).map((tip) => (
+                  <li key={tip}>{tip}</li>
+                ))}
+              </ul>
+            ) : null}
           </div>
           <div className="raid-meter">
             <div className="raid-stars" aria-label={`${hud.stars} stars`}>
@@ -295,19 +329,33 @@ export function BattleScreen({
                 {watching ? (
                   <p className="flex-1 text-xs text-muted">Hold the walls. You do not place a host on defence.</p>
                 ) : (
-                  <Button
-                    variant="secondary"
-                    className="flex-1"
-                    onClick={() => {
-                      const raid = raidRef.current;
-                      autoDeployAll(raid);
-                      raid.timeScale = 2.4;
-                      sfx("clash");
-                      setHud(snapshot(raid));
-                    }}
-                  >
-                    Captains, take them
-                  </Button>
+                  <>
+                    <Button
+                      variant="secondary"
+                      className="flex-1"
+                      onClick={() => {
+                        const raid = raidRef.current;
+                        autoDeployAll(raid);
+                        raid.timeScale = 2.4;
+                        sfx("clash");
+                        setHud(snapshot(raid));
+                      }}
+                    >
+                      Captains, take them
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      className="flex-1"
+                      onClick={() => {
+                        const raid = raidRef.current;
+                        runRaid(raid);
+                        sfx("ok");
+                        setHud(snapshot(raid));
+                      }}
+                    >
+                      Auto resolve
+                    </Button>
+                  </>
                 )}
                 {battle.humanSide === "atk" ? (
                   <Button
@@ -392,16 +440,23 @@ function paint(
     ctx.fillStyle = "#2a261c";
     ctx.fillRect(0, 0, RAID_W, RAID_H);
   }
-  ctx.fillStyle = "rgba(12,11,10,0.18)";
+  const dusk = ctx.createRadialGradient(RAID_W / 2, RAID_H / 2, 80, RAID_W / 2, RAID_H / 2, 420);
+  dusk.addColorStop(0, "rgba(12,11,10,0.08)");
+  dusk.addColorStop(1, "rgba(12,11,10,0.55)");
+  ctx.fillStyle = dusk;
   ctx.fillRect(0, 0, RAID_W, RAID_H);
-  ctx.fillStyle = "rgba(72, 58, 38, 0.45)";
+  ctx.fillStyle = "rgba(62, 48, 28, 0.5)";
   ctx.beginPath();
-  ctx.ellipse(RAID_W / 2, RAID_H / 2, 188, 142, 0, 0, Math.PI * 2);
+  ctx.ellipse(RAID_W / 2, RAID_H / 2 + 8, 196, 148, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(40, 32, 20, 0.35)";
+  ctx.beginPath();
+  ctx.ellipse(RAID_W / 2, RAID_H / 2 + 8, 150, 108, 0, 0, Math.PI * 2);
   ctx.fill();
   if (raid.phase !== "over" && raid.humanSide === "atk") {
-    ctx.strokeStyle = "rgba(232,220,196,0.22)";
-    ctx.setLineDash([6, 6]);
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = raid.phase === "deploy" ? "rgba(232,220,196,0.45)" : "rgba(232,220,196,0.18)";
+    ctx.setLineDash([8, 7]);
+    ctx.lineWidth = 2.4;
     ctx.beginPath();
     ctx.ellipse(RAID_W / 2, RAID_H / 2, 172, 132, 0, 0, Math.PI * 2);
     ctx.stroke();
@@ -419,67 +474,134 @@ function paint(
     }
   }
   for (const wall of raid.walls) {
-    const frac = wall.hp / wall.max;
-    const wood = (raid.fort ?? 1) === 1 || (raid.fort ?? 1) === 3;
-    if (wall.climb) {
-      ctx.fillStyle = "rgba(196,170,120,0.55)";
-      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-      ctx.strokeStyle = "rgba(232,220,196,0.7)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(wall.x + 3, wall.y + wall.h);
-      ctx.lineTo(wall.x + wall.w / 2, wall.y);
-      ctx.lineTo(wall.x + wall.w - 3, wall.y + wall.h);
-      ctx.stroke();
-    } else if (wall.gate) {
-      ctx.fillStyle = wood ? "rgba(118,74,32,0.95)" : "rgba(156,148,132,0.92)";
-      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-    } else if (wood) {
-      ctx.fillStyle = `rgba(${86 + (1 - frac) * 28}, ${50 - frac * 8}, ${20}, ${0.72 + frac * 0.22})`;
-      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-      ctx.fillStyle = `rgba(58, 34, 14, ${0.55 + frac * 0.3})`;
-      const step = Math.max(5, Math.min(8, Math.max(wall.w, wall.h) / 6));
-      if (wall.w >= wall.h) {
-        for (let x = wall.x + 1; x < wall.x + wall.w - 1; x += step) {
-          ctx.fillRect(x, wall.y - 5, 3.2, wall.h + 7);
-        }
-      } else {
-        for (let y = wall.y + 1; y < wall.y + wall.h - 1; y += step) {
-          ctx.fillRect(wall.x - 5, y, wall.w + 7, 3.2);
-        }
-      }
-    } else {
-      ctx.fillStyle = `rgba(${108 + (1 - frac) * 36}, ${104 - frac * 10}, ${92}, ${0.62 + frac * 0.3})`;
-      ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-    }
+    drawWall(ctx, wall, (raid.fort ?? 1) === 1 || (raid.fort ?? 1) === 3);
   }
   for (const b of raid.buildings) {
     if (b.hp <= 0) {
-      ctx.fillStyle = "rgba(20,16,12,0.45)";
+      ctx.fillStyle = "rgba(20,16,12,0.55)";
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r * 0.7, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, b.r * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(180,90,74,0.35)";
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r * 0.4, 0, Math.PI * 2);
       ctx.fill();
       continue;
     }
     drawBuilding(ctx, b, imgs, raid.camp, raid.fort ?? 1);
   }
-  for (const u of raid.units) {
-    if (u.hp <= 0) continue;
-    drawUnit(ctx, u, imgs);
-  }
-  ctx.fillStyle = "rgba(232,200,120,0.9)";
-  for (const sh of raid.shots) {
-    ctx.beginPath();
-    ctx.arc(sh.x, sh.y, sh.splash > 0 ? 4 : 2.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const living = raid.units.filter((u) => u.hp > 0);
+  living.sort((a, b) => a.y - b.y);
+  for (const u of living) drawUnit(ctx, u, imgs);
+  for (const sh of raid.shots) drawShot(ctx, sh);
   if (!reduced) {
-    ctx.fillStyle = "rgba(232,220,196,0.7)";
     for (const sp of raid.sparks) {
       ctx.globalAlpha = Math.max(0, sp.life / sp.max);
-      ctx.fillRect(sp.x, sp.y, 2.4, 2.4);
+      ctx.fillStyle = sp.life / sp.max > 0.5 ? "rgba(232,220,196,0.9)" : "rgba(180,90,74,0.7)";
+      ctx.fillRect(sp.x, sp.y, 2.6, 2.6);
     }
     ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+function drawWall(ctx: CanvasRenderingContext2D, wall: RaidState["walls"][number], wood: boolean) {
+  const frac = Math.max(0, wall.hp / wall.max);
+  if (wall.climb) {
+    ctx.fillStyle = "rgba(196,170,120,0.7)";
+    ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+    ctx.strokeStyle = "rgba(232,220,196,0.85)";
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(wall.x + 3, wall.y + wall.h);
+    ctx.lineTo(wall.x + wall.w / 2, wall.y);
+    ctx.lineTo(wall.x + wall.w - 3, wall.y + wall.h);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(12,11,10,0.45)";
+    ctx.lineWidth = 1.2;
+    for (let i = 1; i < 4; i++) {
+      const t = i / 4;
+      ctx.beginPath();
+      ctx.moveTo(wall.x + 3 + t * (wall.w / 2 - 3), wall.y + wall.h - t * wall.h);
+      ctx.lineTo(wall.x + wall.w - 3 - t * (wall.w / 2 - 3), wall.y + wall.h - t * wall.h);
+      ctx.stroke();
+    }
+    return;
+  }
+  if (wall.gate) {
+    ctx.fillStyle = wood ? "rgba(92,56,24,0.96)" : "rgba(72,68,60,0.96)";
+    ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+    ctx.fillStyle = "rgba(12,11,10,0.55)";
+    const aw = Math.max(8, wall.w * 0.55);
+    const ah = Math.max(10, wall.h * 0.7);
+    ctx.beginPath();
+    ctx.moveTo(wall.x + (wall.w - aw) / 2, wall.y + wall.h);
+    ctx.lineTo(wall.x + (wall.w - aw) / 2, wall.y + wall.h - ah + aw / 2);
+    ctx.arc(wall.x + wall.w / 2, wall.y + wall.h - ah + aw / 2, aw / 2, Math.PI, 0);
+    ctx.lineTo(wall.x + (wall.w + aw) / 2, wall.y + wall.h);
+    ctx.fill();
+    if (frac < 0.5) {
+      ctx.strokeStyle = "rgba(180,90,74,0.8)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(wall.x + 2, wall.y + 2);
+      ctx.lineTo(wall.x + wall.w - 2, wall.y + wall.h - 2);
+      ctx.stroke();
+    }
+    return;
+  }
+  ctx.fillStyle = wood
+    ? `rgba(${86 + (1 - frac) * 28}, ${50 - frac * 8}, ${20}, ${0.78 + frac * 0.18})`
+    : `rgba(${108 + (1 - frac) * 36}, ${104 - frac * 10}, ${92}, ${0.7 + frac * 0.24})`;
+  ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+  ctx.fillStyle = wood ? "rgba(58, 34, 14, 0.7)" : "rgba(70, 66, 58, 0.65)";
+  const step = Math.max(6, Math.min(10, Math.max(wall.w, wall.h) / 5));
+  if (wall.w >= wall.h) {
+    for (let x = wall.x; x < wall.x + wall.w - 2; x += step) {
+      ctx.fillRect(x, wall.y - 6, step * 0.55, 7);
+    }
+  } else {
+    for (let y = wall.y; y < wall.y + wall.h - 2; y += step) {
+      ctx.fillRect(wall.x - 6, y, 7, step * 0.55);
+    }
+  }
+  if (frac < 0.4) {
+    ctx.fillStyle = "rgba(20,16,12,0.35)";
+    ctx.fillRect(wall.x, wall.y + wall.h * 0.4, wall.w, wall.h * 0.25);
+  }
+}
+
+function drawShot(ctx: CanvasRenderingContext2D, sh: RaidState["shots"][number]) {
+  const a = Math.atan2(sh.vy, sh.vx);
+  ctx.save();
+  ctx.translate(sh.x, sh.y);
+  ctx.rotate(a);
+  if (sh.splash > 0) {
+    ctx.fillStyle = "rgba(12,11,10,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(2, 6, 5, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#c4b496";
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(12,11,10,0.45)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = "rgba(232,220,196,0.95)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(-9, 0);
+    ctx.lineTo(6, 0);
+    ctx.stroke();
+    ctx.fillStyle = "#cfc6b0";
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.lineTo(4, -3);
+    ctx.lineTo(4, 3);
+    ctx.closePath();
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -507,6 +629,10 @@ function drawBuilding(
             ? imgs.woodwalls
             : imgs.walls;
   ctx.save();
+  ctx.fillStyle = "rgba(12,11,10,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(b.x, b.y + b.r * 0.7, b.r * 0.9, b.r * 0.32, 0, 0, Math.PI * 2);
+  ctx.fill();
   if (b.flash > 0) ctx.filter = "brightness(1.8)";
   ctx.beginPath();
   ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
@@ -528,73 +654,80 @@ function drawBuilding(
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.r - 1, 0, Math.PI * 2);
     ctx.clip();
-    const s = b.r * 2.1;
+    const s = b.r * 2.2;
     ctx.drawImage(img, b.x - s / 2, b.y - s / 2, s, s);
     ctx.restore();
   }
+  if (b.kind === "keep") {
+    ctx.fillStyle = camp ? "#b45a4a" : "#cfc6b0";
+    ctx.beginPath();
+    ctx.moveTo(b.x + 4, b.y - b.r - 10);
+    ctx.lineTo(b.x + 18, b.y - b.r - 4);
+    ctx.lineTo(b.x + 4, b.y - b.r + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "rgba(12,11,10,0.7)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(b.x + 4, b.y - b.r + 6);
+    ctx.lineTo(b.x + 4, b.y - b.r - 10);
+    ctx.stroke();
+  }
   ctx.restore();
   const frac = b.hp / b.max;
-  ctx.fillStyle = "rgba(12,11,10,0.7)";
-  ctx.fillRect(b.x - b.r, b.y - b.r - 6, b.r * 2, 3);
+  ctx.fillStyle = "rgba(12,11,10,0.75)";
+  ctx.fillRect(b.x - b.r, b.y - b.r - 7, b.r * 2, 4);
   ctx.fillStyle = frac > 0.45 ? "#cfc6b0" : "#b45a4a";
-  ctx.fillRect(b.x - b.r, b.y - b.r - 6, b.r * 2 * frac, 3);
+  ctx.fillRect(b.x - b.r, b.y - b.r - 7, b.r * 2 * frac, 4);
   if (b.kind !== "keep" && b.kind !== "store") {
-    ctx.fillStyle = "rgba(232,220,196,0.8)";
+    ctx.fillStyle = "rgba(232,220,196,0.85)";
     ctx.font = "8px Palatino, serif";
     ctx.textAlign = "center";
-    ctx.fillText(b.kind === "cannon" ? "cannon" : b.kind === "archer" ? "archers" : b.kind === "scorpion" ? "scorpion" : "air", b.x, b.y + b.r + 10);
+    ctx.fillText(b.kind === "cannon" ? "cannon" : b.kind === "archer" ? "archers" : b.kind === "scorpion" ? "scorpion" : "air", b.x, b.y + b.r + 11);
   }
 }
 
 function drawUnit(ctx: CanvasRenderingContext2D, u: RaidState["units"][number], imgs: Record<string, HTMLImageElement>) {
-  const r = u.radius;
+  const r = u.radius + (u.kind === "dragon" ? 2 : 0);
+  const facing = typeof u.facing === "number" ? u.facing : 0;
   ctx.save();
+  ctx.fillStyle = "rgba(12,11,10,0.4)";
+  ctx.beginPath();
+  ctx.ellipse(u.x, u.y + r * 0.7, r * 0.95, r * 0.38, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.translate(u.x, u.y);
+  ctx.rotate(facing);
   if (u.flash > 0) ctx.filter = "brightness(1.9)";
-  if (u.kind === "ram" || u.kind === "catapult" || u.kind === "ladder" || u.kind === "tower") {
-    const img = imgs[u.kind];
+  const siege = u.kind === "ram" || u.kind === "catapult" || u.kind === "ladder" || u.kind === "tower";
+  const img = siege ? imgs[u.kind] : u.kind === "beast" ? imgs.beast : imgs[u.kind];
+  ctx.beginPath();
+  ctx.arc(0, 0, r + 1.2, 0, Math.PI * 2);
+  ctx.fillStyle = siege ? "#4a3c2c" : u.side === "def" ? "#5a4034" : "#3d4a3a";
+  ctx.fill();
+  if (img?.complete && img.naturalWidth) {
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(u.x, u.y, r + 1, 0, Math.PI * 2);
-    ctx.fillStyle = "#4a3c2c";
-    ctx.fill();
-    if (img?.complete && img.naturalWidth) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(u.x, u.y, r, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(img, u.x - r, u.y - r, r * 2, r * 2);
-      ctx.restore();
-    } else {
-      drawSiege(ctx, u);
-    }
-    ctx.strokeStyle = "rgba(232,220,196,0.7)";
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.arc(u.x, u.y, r, 0, Math.PI * 2);
-    ctx.stroke();
-  } else {
-    const img = u.kind === "beast" ? imgs.beast : imgs[u.kind];
-    ctx.beginPath();
-    ctx.arc(u.x, u.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = u.side === "def" ? "#5a4034" : "#3d4a3a";
-    ctx.fill();
-    if (img?.complete && img.naturalWidth) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(u.x, u.y, r - 0.5, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(img, u.x - r, u.y - r, r * 2, r * 2);
-      ctx.restore();
-    }
-    ctx.strokeStyle = u.side === "def" ? "rgba(180,90,74,0.8)" : "rgba(207,198,176,0.75)";
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.rotate(-facing);
+    ctx.drawImage(img, -r, -r, r * 2, r * 2);
+    ctx.restore();
+  } else if (siege) {
+    ctx.rotate(-facing);
+    drawSiege(ctx, { ...u, x: 0, y: 0 });
+    ctx.rotate(facing);
   }
+  ctx.strokeStyle = u.side === "def" ? "rgba(180,90,74,0.95)" : "rgba(207,198,176,0.9)";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
   const frac = u.hp / u.max;
-  ctx.fillStyle = "rgba(12,11,10,0.7)";
-  ctx.fillRect(u.x - r, u.y + r + 2, r * 2, 2.4);
+  ctx.fillStyle = "rgba(12,11,10,0.75)";
+  ctx.fillRect(u.x - r, u.y + r + 2, r * 2, 3);
   ctx.fillStyle = u.side === "def" ? "#b45a4a" : "#cfc6b0";
-  ctx.fillRect(u.x - r, u.y + r + 2, r * 2 * frac, 2.4);
+  ctx.fillRect(u.x - r, u.y + r + 2, r * 2 * frac, 3);
 }
 
 function drawSiege(ctx: CanvasRenderingContext2D, u: RaidState["units"][number]) {

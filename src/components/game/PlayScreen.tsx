@@ -226,9 +226,9 @@ export function PlayScreen({
         <nav className="grid shrink-0 grid-cols-3 gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
           {(
             [
-              ["train", "Train", "Raise swordmen (1 watch), bowmen (1), knights (2), beasts (3) or a dragon (5). House beasts raise only at your capital."],
+              ["train", "Train", "Raise warriors (1 watch), archers (1), knights (2), beasts (3) or a dragon (5). House beasts raise only at your capital."],
               ["march", "March", "Set the host, then tap a neighbour. Columns take a watch to arrive. Send different units to different lands in the same watch."],
-              ["build", "Build", "Raise a port, mine, market, walls, keep, ship, scorpion, or siege engines in the selected land."],
+              ["build", "Build", "Raise a port, mine, market, walls, keep, ship or scorpion in the selected land. Siege engines raise on the siege screen."],
             ] as const
           ).map(([id, label, hint]) => (
             <div key={id} className="flex items-center gap-1">

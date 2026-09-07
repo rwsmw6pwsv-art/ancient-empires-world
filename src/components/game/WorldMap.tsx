@@ -6,6 +6,7 @@ import {
   LANDSCAPE,
   OCEAN_LABELS,
   PROP_SRC,
+  RESOURCE_LABEL,
   SIEGE_SRC,
   fortProp,
   type ResourceId,
@@ -628,6 +629,7 @@ export function WorldMap({
             const nameY = d.labelY + 22 / view.k;
             const regionY = nameY + nameFs * 0.4 + infoFs + Math.max(3.5, 7 / view.k);
             const region = CONTINENT_NAMES[d.continent];
+            const rich = LANDSCAPE[d.id]?.resource;
             return (
               <g key={`l-${d.id}`} className="map-stat">
                 <title>
@@ -637,6 +639,7 @@ export function WorldMap({
                     : t.owner === "barbarian"
                       ? ", tribe"
                       : ", city"}
+                  {rich ? `, abundance of ${RESOURCE_LABEL[rich]}` : ""}
                   {t.besiegedFrom ? `, under siege from ${TERRITORY_BY_ID[t.besiegedFrom]?.name ?? "a neighbour"}` : ""}
                   {jobsAt(state, d.id).length ? `, ${jobsAt(state, d.id).length} works underway` : ""}
                 </title>

@@ -15,8 +15,8 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
   },
   lumuria: {
     id: "lumuria",
-    name: "Lemuria",
-    adjective: "Lemurian",
+    name: "Shangri-La",
+    adjective: "Shangri-La",
     capitol: CAPITOL.lumuria,
     homes: ["india", "himalaya", "indochina", "canton", "malaya", "gulf", "burma", "yunnan"],
     color: "#f43f9a",
@@ -36,8 +36,8 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
   },
   aztec: {
     id: "aztec",
-    name: "Aztec",
-    adjective: "Mexica",
+    name: "Mayan",
+    adjective: "Mayan",
     capitol: CAPITOL.aztec,
     homes: ["mexico", "yucatan", "sierra", "texas", "panama", "oaxaca", "baja"],
     color: "#ef233c",
@@ -59,8 +59,8 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
   },
   tartaria: {
     id: "tartaria",
-    name: "Tartaria",
-    adjective: "Tartarian",
+    name: "Kunlun",
+    adjective: "Kunlun",
     capitol: CAPITOL.tartaria,
     homes: ["cathay", "gobi", "nippon", "siberia", "baikal", "yakutia", "chukotka", "jiangnan", "tarim", "korea"],
     color: "#3b82f6",
@@ -82,8 +82,8 @@ export const EMPIRES: Record<EmpireId, EmpireDef> = {
   },
   babylon: {
     id: "babylon",
-    name: "Babylon",
-    adjective: "Babylonian",
+    name: "Sumer",
+    adjective: "Sumerian",
     capitol: CAPITOL.babylon,
     homes: ["mesopotamia", "arabia", "persia", "anatolia", "armenia", "hejaz"],
     color: "#c084fc",

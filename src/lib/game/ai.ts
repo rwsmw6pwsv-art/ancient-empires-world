@@ -160,6 +160,20 @@ function sendCount(send: { levy: number; bowmen?: number; knights: number; drago
   return send.levy + (send.bowmen ?? 0) + send.knights + send.dragons + send.beasts;
 }
 
+function borderStable(state: GameState, player: PlayerId, holdCap: TerritoryState | null): boolean {
+  if (holdCap && threatened(state, holdCap, player)) return false;
+  return true;
+}
+
+function marketSite(state: GameState, lands: TerritoryState[], p: GameState["players"][number]): TerritoryState | null {
+  const cost = worksCost(p, "market");
+  if (p.gold < cost.gold || p.wood < cost.wood) return null;
+  const open = lands.filter((t) => !t.market && !hasKindJob(state, t.id, "market"));
+  if (!open.length) return null;
+  open.sort((a, b) => Number(Boolean(b.road)) - Number(Boolean(a.road)) || standing(b) - standing(a));
+  return open[0] ?? null;
+}
+
 function threatened(state: GameState, t: TerritoryState, player: PlayerId): boolean {
   return neighborThreat(state, t, player) >= standing(t);
 }
@@ -341,6 +355,16 @@ export function nextAiAction(state: GameState): AiAction {
     if (standing(t) <= hostDefense(state, foe) + 1) trainAt = t;
   }
 
+  const stable = borderStable(state, player, holdCap);
+
+  if (canDragonNow && nest && wagesOk(1) && stable && !hasKindJob(state, nest.id, "dragon")) {
+    return { type: "train", territoryId: nest.id, kind: "dragon" };
+  }
+  if (realm >= 3 && stable) {
+    const stall = marketSite(state, lands, p);
+    if (stall) return { type: "build", territoryId: stall.id, kind: "market" };
+  }
+
   if (stoutBorder && !hasKindJob(state, trainAt.id, "levy") && p.gold >= UNIT_COST.levy.gold && p.metal >= UNIT_COST.levy.metal && wagesOk(1) && !saving) {
     return { type: "train", territoryId: trainAt.id, kind: "levy" };
   }
@@ -377,9 +401,6 @@ export function nextAiAction(state: GameState): AiAction {
     }
   }
 
-  if (canDragonNow && nest && wagesOk(1) && !stoutBorder && !hasKindJob(state, nest.id, "dragon")) {
-    return { type: "train", territoryId: nest.id, kind: "dragon" };
-  }
   if (canBeastNow && holdCap && wagesOk(BEAST_WAGE) && !stoutBorder && !hasKindJob(state, holdCap.id, "beast")) {
     return { type: "train", territoryId: holdCap.id, kind: "beast" };
   }
@@ -516,6 +537,18 @@ export function playAiTurnsUntilBattle(
     if (action.type !== "end" && next === before) next = endTurn(next);
     acted += 1;
     steps += 1;
+  }
+  const incoming = (next.arrivals ?? []).find((a) => next.territories[a.to]?.owner === 0);
+  if (incoming) {
+    const battle = openRaid(
+      next,
+      incoming.from,
+      incoming.to,
+      { levy: incoming.levy, bowmen: incoming.bowmen, knights: incoming.knights, dragons: incoming.dragons, beasts: incoming.beasts },
+      { rams: incoming.rams, catapults: incoming.catapults, ladders: incoming.ladders, towers: incoming.towers },
+      "def",
+    );
+    if (battle) return { state: next, battle };
   }
   return { state: next, battle: null };
 }

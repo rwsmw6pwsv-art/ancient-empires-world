@@ -322,7 +322,7 @@ export const EMPIRE_BEAST: Record<EmpireId, BeastDef> = {
   atlantis: { id: "direwolf", name: "Direwolves", atk: 16, def: 8, cost: 8 },
   lumuria: { id: "rhino", name: "Rhinos", atk: 14, def: 10, cost: 8 },
   eldorado: { id: "caiman", name: "Black caiman", atk: 13, def: 8, cost: 7 },
-  aztec: { id: "jaguar", name: "Jaguars", atk: 13, def: 6, cost: 6 },
+  aztec: { id: "jaguar", name: "Jaguars", atk: 13, def: 6, cost: 8 },
   asgard: { id: "buffalo", name: "Buffalo", atk: 13, def: 8, cost: 7 },
   egypt: { id: "lion", name: "Lions", atk: 14, def: 7, cost: 7 },
   babylon: { id: "elephant", name: "Elephants", atk: 16, def: 10, cost: 10 },

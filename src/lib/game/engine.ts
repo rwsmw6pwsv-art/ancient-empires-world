@@ -85,6 +85,21 @@ export function standing(t: TerritoryState): number {
   return t.levy + (t.bowmen ?? 0) + t.knights + t.dragons + (t.beasts ?? 0);
 }
 
+/** Warriors who never march — a capital and walled city keep a watch on the walls. */
+export function cityWatch(t: TerritoryState): number {
+  if (isBarbarian(t.owner)) return 0;
+  const seat = Object.values(CAPITOL).includes(t.id);
+  const fort = fortOf(t);
+  if (!seat && fort < 1) return 0;
+  const floor = (seat ? 2 : 0) + fort;
+  const host = t.levy + (t.bowmen ?? 0);
+  return Math.max(0, floor - host);
+}
+
+export function isSeat(t: TerritoryState): boolean {
+  return Object.values(CAPITOL).includes(t.id);
+}
+
 export function hostOf(t: Pick<TerritoryState, "levy" | "bowmen" | "knights" | "dragons" | "beasts">): HostForce {
   return {
     levy: t.levy ?? 0,
@@ -402,15 +417,20 @@ export function incomeFor(state: GameState, player: PlayerId) {
   const ids = ownedIds(state, player);
   const n = ids.length;
   let gold = n;
-  let silver = n * SILVER_PER_LAND;
-  let wood = Math.floor(n / 3);
-  let stone = Math.floor(n / 3);
-  let metal = Math.floor(n / 4);
-  let food = n;
+  let silver = 0;
+  let wood = 0;
+  let stone = 0;
+  let metal = 0;
+  let food = 0;
   for (const id of ids) {
     const t = terr(state, id);
     const meta = TERRITORY_BY_ID[id]!;
     gold += 2;
+    silver += SILVER_PER_LAND;
+    wood += 1;
+    stone += 1;
+    metal += 1;
+    food += 1;
     const mineR = worksRank(t, "mine");
     const portR = worksRank(t, "port");
     const marketR = worksRank(t, "market");
@@ -548,7 +568,7 @@ function grantSpoils(
 }
 
 function defendingHost(t: TerritoryState): number {
-  return t.levy + (t.bowmen ?? 0) + t.knights + t.dragons + (t.beasts ?? 0);
+  return t.levy + (t.bowmen ?? 0) + t.knights + t.dragons + (t.beasts ?? 0) + cityWatch(t);
 }
 
 function holdsContinent(state: GameState, player: PlayerId, continent: ContinentId): boolean {
@@ -573,12 +593,12 @@ function placeDragon(state: GameState, player: PlayerId, preferId: string, fallb
 
 function tribeBand(diff: Difficulty) {
   if (diff === "easy") {
-    return { min: 3, max: 5, cap: 7, grow: 0.35, pressGrow: 0.12, knight: 0.05, knightLevy: 5 };
+    return { min: 2, max: 4, cap: 5, grow: 0.18, pressGrow: 0.06, knight: 0.04, knightLevy: 5 };
   }
   if (diff === "hard") {
-    return { min: 7, max: 9, cap: 10, grow: 0.6, pressGrow: 0.28, knight: 0.16, knightLevy: 6 };
+    return { min: 5, max: 7, cap: 8, grow: 0.28, pressGrow: 0.12, knight: 0.1, knightLevy: 6 };
   }
-  return { min: 5, max: 7, cap: 8, grow: 0.45, pressGrow: 0.2, knight: 0.1, knightLevy: 5 };
+  return { min: 3, max: 5, cap: 6, grow: 0.22, pressGrow: 0.1, knight: 0.07, knightLevy: 5 };
 }
 
 function grantTerritory(
@@ -616,13 +636,13 @@ function seedBarbarians(state: GameState, rng: () => number) {
     t.owner = "barbarian";
     t.levy = randInt(rng, band.min, band.max);
     t.knights = rng() < (state.difficulty === "hard" ? 0.35 : state.difficulty === "easy" ? 0.05 : 0.2) ? 1 : 0;
-    setFort(t, 1);
+    setFort(t, 0);
     t.pressure = 0;
     t.population = 1;
   }
   const labrador = state.territories.labrador;
   if (labrador && labrador.owner === "barbarian") {
-    const floor = state.difficulty === "easy" ? band.max : state.difficulty === "hard" ? 8 : 5;
+    const floor = state.difficulty === "easy" ? band.max : state.difficulty === "hard" ? 6 : 4;
     labrador.levy = Math.max(labrador.levy, floor);
   }
   const seats = new Set(Object.values(CAPITOL));
@@ -630,7 +650,7 @@ function seedBarbarians(state: GameState, rng: () => number) {
     const t = terr(state, id);
     if (t.owner !== "barbarian") continue;
     if (!landNeighbors(id).some((n) => seats.has(n))) continue;
-    t.levy = Math.min(band.cap + 2, t.levy + 2);
+    t.levy = Math.min(band.cap + 1, t.levy + 1);
   }
 }
 
@@ -693,7 +713,7 @@ export function createNewGame(opts: {
       ladders: 0,
       towers: 0,
       scorpions: 0,
-      fort: 1,
+      fort: 0,
       breach: 0,
       besiegedFrom: null,
       pressure: 0,
@@ -788,7 +808,13 @@ export function setMarchFrom(state: GameState, id: string | null): GameState {
 }
 
 function clone<T>(v: T): T {
-  return structuredClone(v);
+  return inPlaceSim ? v : structuredClone(v);
+}
+
+/** Headless sims only: mutate the live state instead of cloning every action. */
+let inPlaceSim = false;
+export function setInPlaceSim(on: boolean) {
+  inPlaceSim = on;
 }
 
 export function supportingDragonDamage(state: GameState, attacker: PlayerId, toId: string): number {
@@ -853,6 +879,9 @@ type AssaultMeta = {
   wasCapitol: boolean;
   continentsBefore: number;
   player: PlayerId;
+  tribal?: boolean;
+  watch: number;
+  fieldLevy: number;
 };
 
 function prepareAssault(
@@ -939,8 +968,15 @@ function prepareAssault(
       wasCapitol,
       continentsBefore,
       player,
+      watch: cityWatch(to),
+      fieldLevy: to.levy,
     },
   };
+}
+
+function persistFieldLevy(fieldLevy: number, watch: number, dLevy: number): number {
+  const lost = Math.max(0, fieldLevy + watch - dLevy);
+  return Math.max(0, fieldLevy - lost);
 }
 
 function finishAssault(
@@ -959,14 +995,14 @@ function finishAssault(
 ): GameState {
   const from = terr(next, meta.fromId);
   const to = terr(next, meta.toId);
-  const attackerName = empireOf(playerOf(next, meta.player).empire).name;
+  const attackerName = meta.tribal ? "Tribes" : empireOf(playerOf(next, meta.player).empire).name;
   const place = TERRITORY_BY_ID[meta.toId]!.name;
   const aliveAtk = aLevy + aBowmen + aKnights + aDragons + aBeasts;
   const aliveDef = dLevy + dBowmen + dKnights + dDragons + dBeasts;
 
   if (aliveDef <= 0 && aliveAtk > 0) {
     const prev = to.owner;
-    to.owner = meta.player;
+    to.owner = meta.tribal ? "barbarian" : meta.player;
     to.levy = aLevy;
     to.bowmen = aBowmen;
     to.knights = aKnights;
@@ -977,15 +1013,24 @@ function finishAssault(
       to.dragons = DRAGON_CAP;
     }
     to.ships = 0;
-    if (meta.convoy) berthShip(from, to);
+    if (meta.convoy && !meta.tribal) berthShip(from, to);
     to.pressure = 0;
     to.breach = 0;
     to.besiegedFrom = null;
     liftSiegesFrom(next, meta.fromId);
     if ((to.population ?? 0) < 1) to.population = 1;
-    grantSpoils(next, meta.player, meta.toId, meta.defHost, meta.brokeContinent);
+    if (meta.tribal) {
+      setFort(to, 0);
+      to.bowmen = 0;
+      to.knights = 0;
+      to.dragons = 0;
+      to.beasts = 0;
+      to.ships = 0;
+    } else {
+      grantSpoils(next, meta.player, meta.toId, meta.defHost, meta.brokeContinent);
+    }
     if (prev === "barbarian") {
-      to.levy += 1;
+      if (!meta.tribal) to.levy += 1;
       log(next, `${attackerName} takes ${place} and strips the camp.`);
     } else {
       const leftover = ownedIds(next, prev).length;
@@ -999,16 +1044,16 @@ function finishAssault(
         log(next, `${attackerName} takes ${place}.`);
       }
     }
-    if (meta.wasCapitol) {
+    if (!meta.tribal && meta.wasCapitol) {
       const nest = placeDragon(next, meta.player, meta.toId, meta.fromId);
       if (nest) log(next, `A dragon wakes in ${TERRITORY_BY_ID[nest]!.name} over the fallen capital.`);
     }
-    if (continentsHeld(next, meta.player).length > meta.continentsBefore) {
+    if (!meta.tribal && continentsHeld(next, meta.player).length > meta.continentsBefore) {
       const nest = placeDragon(next, meta.player, meta.toId, meta.fromId);
       if (nest) log(next, `${CONTINENT_NAMES[meta.destCont]} yields a dragon in ${TERRITORY_BY_ID[nest]!.name}.`);
     }
   } else {
-    to.levy = dLevy;
+    to.levy = persistFieldLevy(meta.fieldLevy, meta.watch, dLevy);
     to.bowmen = dBowmen;
     to.knights = dKnights;
     to.dragons = dDragons;
@@ -1045,7 +1090,7 @@ export function resolveAttack(
   let aKnights = meta.force.knights;
   let aDragons = meta.force.dragons;
   let aBeasts = sendBeasts;
-  let dLevy = to.levy;
+  let dLevy = to.levy + meta.watch;
   let dBowmen = to.bowmen ?? 0;
   let dKnights = to.knights;
   let dDragons = to.dragons;
@@ -1756,7 +1801,8 @@ function settleMarch(state: GameState, order: MarchOrder) {
     });
     return;
   }
-  const humanInvolved = order.player === 0 || to.owner === 0;
+  const humanSeat = state.players.find((p) => p.human)?.id;
+  const humanInvolved = humanSeat != null && (order.player === humanSeat || to.owner === humanSeat);
   if (humanInvolved) {
     state.arrivals.push(order);
     log(state, `The column from ${fromName} falls on ${toName}.`);
@@ -1787,7 +1833,7 @@ function mergeHost(to: TerritoryState, force: HostForce, overflow: TerritoryStat
 
 function resolveArrival(state: GameState, order: MarchOrder): GameState {
   const force = hostFromOrder(order);
-  return resolveAttackWithHost(state, order.from, order.to, force, order.ships, order.player);
+  return resolveAttackWithHost(state, order.from, order.to, force, order.ships, order.player, Boolean(order.tribal));
 }
 
 function resolveAttackWithHost(
@@ -1797,6 +1843,7 @@ function resolveAttackWithHost(
   force: HostForce,
   convoy: number,
   attacker: PlayerId,
+  tribal = false,
 ): GameState {
   const next = clone(state);
   const to = terr(next, toId);
@@ -1805,6 +1852,7 @@ function resolveAttackWithHost(
   const sendBeasts = force.beasts ?? 0;
   const sendBowmen = force.bowmen ?? 0;
   if (isBarbarian(to.owner)) to.pressure = 3;
+  const watch = cityWatch(to);
   const meta: AssaultMeta = {
     fromId,
     toId,
@@ -1818,6 +1866,9 @@ function resolveAttackWithHost(
     wasCapitol: to.owner !== "barbarian" && empireOf(playerOf(next, to.owner).empire).capitol === toId,
     continentsBefore: continentsHeld(next, player).length,
     player,
+    tribal,
+    watch,
+    fieldLevy: to.levy,
   };
   const rng = mulberry32((next.seed + next.clock.turn * 997 + (force.levy + sendBowmen + force.knights + force.dragons + sendBeasts) * 13 + toId.length) >>> 0);
   let aLevy = force.levy;
@@ -1825,12 +1876,12 @@ function resolveAttackWithHost(
   let aKnights = force.knights;
   let aDragons = force.dragons;
   let aBeasts = sendBeasts;
-  let dLevy = to.levy;
+  let dLevy = to.levy + watch;
   let dBowmen = to.bowmen ?? 0;
   let dKnights = to.knights;
   let dDragons = to.dragons;
   let dBeasts = to.beasts ?? 0;
-  const support = supportingDragonDamage(next, player, toId);
+  const support = tribal ? 0 : supportingDragonDamage(next, player, toId);
   if (support > 0) {
     const hit = applyStrikeToDefense(dLevy, dKnights, dDragons, support, dBeasts, dBowmen, aDragons > 0);
     dLevy = hit.levy;
@@ -1839,7 +1890,7 @@ function resolveAttackWithHost(
     dDragons = hit.dragons;
     dBeasts = hit.beasts;
   }
-  const atkBeast = beastOf(playerOf(next, player).empire);
+  const atkBeast = tribal ? { atk: 0, def: 0 } : beastOf(playerOf(next, player).empire);
   const defBeast = beastOfOwner(next, to.owner);
   let works = spendSiegeOnWorks(
     { ...from, rams: 0, catapults: 0, ladders: 0, towers: 0 },
@@ -1900,6 +1951,7 @@ export function settleArrival(
   const to = terr(next, order.to);
   const player = order.player;
   const force = hostFromOrder(order);
+  const watch = cityWatch(to);
   const meta: AssaultMeta = {
     fromId: order.from,
     toId: order.to,
@@ -1913,6 +1965,9 @@ export function settleArrival(
     wasCapitol: to.owner !== "barbarian" && empireOf(playerOf(next, to.owner).empire).capitol === order.to,
     continentsBefore: continentsHeld(next, player).length,
     player,
+    tribal: Boolean(order.tribal),
+    watch,
+    fieldLevy: to.levy,
   };
   next.arrivals = (next.arrivals ?? []).filter((a) => a.id !== order.id);
   return finishAssault(
@@ -1935,6 +1990,11 @@ export function abortArrival(state: GameState, order: MarchOrder): GameState {
   const next = clone(state);
   next.arrivals = (next.arrivals ?? []).filter((a) => a.id !== order.id);
   const force = hostFromOrder(order);
+  if (order.tribal) {
+    const camp = next.territories[order.from];
+    if (camp) mergeHost(camp, force, camp);
+    return next;
+  }
   const from = next.territories[order.from];
   const dumpId =
     from && from.owner === order.player ? order.from : ownedIds(next, order.player)[0];
@@ -1977,7 +2037,7 @@ export function playCard(state: GameState, card: CardId, territoryId?: string): 
   if (card === "levy") {
     const id = territoryId ?? ownedIds(next, p.id)[0];
     if (id && terr(next, id).owner === p.id) terr(next, id).levy += 2;
-    log(next, `${empireOf(p.empire).name} calls swordmen.`);
+    log(next, `${empireOf(p.empire).name} calls warriors.`);
   } else if (card === "forge") {
     p.gold += 4;
     p.stone += 2;
@@ -2186,9 +2246,9 @@ function grantRealmRecruits(state: GameState, player: PlayerId) {
 }
 
 function tribeGrowUntil(difficulty: Difficulty): number {
-  if (difficulty === "easy") return 30;
-  if (difficulty === "hard") return 80;
-  return 50;
+  if (difficulty === "easy") return 20;
+  if (difficulty === "hard") return 40;
+  return 30;
 }
 
 function tickTribes(state: GameState) {
@@ -2205,6 +2265,7 @@ function tickTribes(state: GameState) {
       if (t.knights === 0 && t.levy >= band.knightLevy && rng() < band.knight) t.knights = 1;
     }
   }
+  const humanSeat = state.players.find((p) => p.human)?.id;
   const imperial = Object.values(state.territories).filter((t) => t.owner !== "barbarian");
   for (const target of shuffle(rng, imperial)) {
     if (rng() > 0.4) continue;
@@ -2214,12 +2275,55 @@ function tickTribes(state: GameState) {
     if (!raiders.length) continue;
     raiders.sort((a, b) => standing(b) - standing(a));
     const tribe = raiders[0]!;
-    const sendN = Math.max(1, Math.min(tribe.levy - 1, 2));
-    tribe.levy -= sendN;
     const place = TERRITORY_BY_ID[target.id]!.name;
     const camp = TERRITORY_BY_ID[tribe.id]!.name;
     const thin = standing(target) <= 1;
-    if (thin && sendN > 0) {
+    const watch = cityWatch(target);
+    const seat = isSeat(target);
+    const sendCap = thin ? Math.max(2, watch || 2) : 2;
+    const sendN = Math.max(1, Math.min(tribe.levy - 1, sendCap));
+    if (sendN < 1) continue;
+    tribe.levy -= sendN;
+    const human = humanSeat != null && target.owner === humanSeat;
+    const storm = thin || (seat && standing(target) < 2);
+    if (human && storm) {
+      if (!state.arrivals) state.arrivals = [];
+      state.arrivals.push({
+        id: `m${state.nextJobId++}`,
+        player: humanSeat,
+        from: tribe.id,
+        to: target.id,
+        levy: sendN,
+        bowmen: 0,
+        knights: 0,
+        dragons: 0,
+        beasts: 0,
+        rams: 0,
+        catapults: 0,
+        ladders: 0,
+        towers: 0,
+        ships: 0,
+        remaining: 0,
+        tribal: true,
+      });
+      log(state, `Tribes march on ${place} from ${camp}.`);
+      continue;
+    }
+    const canOverrun = thin && watch <= 0 && fortOf(target) === 0 && !seat;
+    if (storm && !canOverrun) {
+      const fought = resolveAttackWithHost(
+        state,
+        tribe.id,
+        target.id,
+        { levy: sendN, bowmen: 0, knights: 0, dragons: 0, beasts: 0 },
+        0,
+        0,
+        true,
+      );
+      Object.assign(state, fought);
+      break;
+    }
+    if (canOverrun) {
       const prev = target.owner;
       target.owner = "barbarian";
       target.levy = sendN;
@@ -2227,7 +2331,7 @@ function tickTribes(state: GameState) {
       target.dragons = 0;
       target.beasts = 0;
       target.ships = 0;
-      setFort(target, 1);
+      setFort(target, 0);
       target.pressure = 0;
       if (prev !== "barbarian" && ownedIds(state, prev).length === 0) {
         playerOf(state, prev).alive = false;
@@ -2305,6 +2409,15 @@ export function watchReport(before: GameState, after: GameState): string[] {
     }
   }
   lines.push(...lost, ...gained, ...overruns.slice(0, 4), ...takes.slice(0, 4));
+  for (const a of after.arrivals ?? []) {
+    const dest = after.territories[a.to];
+    if (!dest || dest.owner !== 0) continue;
+    const place = TERRITORY_BY_ID[a.to]?.name ?? a.to;
+    const camp = TERRITORY_BY_ID[a.from]?.name ?? "the road";
+    lines.push(
+      a.tribal ? `Tribes fall on ${place} from ${camp}.` : `${empireOf(after.players[a.player]!.empire).name} falls on ${place}.`,
+    );
+  }
   for (const p of after.players) {
     if (before.players[p.id]!.alive && !p.alive) {
       lines.push(`${empireOf(p.empire).name} is broken.`);

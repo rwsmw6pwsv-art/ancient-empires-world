@@ -35,15 +35,17 @@ export function ResourceMark({
   kind,
   amount,
   compact,
+  labeled,
 }: {
   kind: "gold" | "silver" | "wood" | "stone" | "metal" | "food";
   amount?: number;
   compact?: boolean;
+  labeled?: boolean;
 }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 tabular-nums", RES_CLASS[kind])}>
+    <span className={cn("inline-flex items-center gap-1 tabular-nums", RES_CLASS[kind], labeled && "hud-res")}>
       <img src={RES_SRC[kind]} alt="" className="hud-icon" />
-      {compact ? <span className="sr-only">{RES_NAME[kind]}</span> : <span className="opacity-80">{RES_NAME[kind]}</span>}
+      {labeled || !compact ? <span className={labeled ? "hud-res-name" : "opacity-80"}>{RES_NAME[kind]}</span> : <span className="sr-only">{RES_NAME[kind]}</span>}
       {amount === undefined ? null : <span className="font-medium text-fg">{amount}</span>}
     </span>
   );
@@ -182,8 +184,8 @@ export function HostStrip({
   large?: boolean;
 }) {
   const tiles: { src: string; n: number; label: string; cover: boolean }[] = [
-    { src: BATTLE_UNIT_SRC.levy, n: levy, label: "Swordmen", cover: true },
-    { src: BATTLE_UNIT_SRC.bowman, n: bowmen, label: "Bowmen", cover: true },
+    { src: BATTLE_UNIT_SRC.levy, n: levy, label: UNIT_LABEL_PLURAL.levy, cover: true },
+    { src: BATTLE_UNIT_SRC.bowman, n: bowmen, label: UNIT_LABEL_PLURAL.bowman, cover: true },
     { src: PROP_SRC.knight, n: knights, label: "Knights", cover: false },
     { src: beastSrc || PROP_SRC.dragon, n: beasts, label: beastName, cover: !beastSrc },
     { src: BATTLE_UNIT_SRC.dragon, n: dragons, label: "Dragons", cover: true },

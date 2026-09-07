@@ -16,7 +16,7 @@ export type EmpireId =
 export const PLAYER_COUNT = 11;
 export type PlayerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
-export const SAVE_VERSION = 67;
+export const SAVE_VERSION = 68;
 export const WIN_CONTINENTS = 5;
 export const TURN_LIMIT = 200;
 export const GAME_TAGLINE = "Five regions write the age";
@@ -69,7 +69,7 @@ export const CAPITOL: Record<EmpireId, string> = {
 
 export type Difficulty = "easy" | "normal" | "hard";
 export type Opening = "capital";
-/** Swordmen who wake on each capital, before house bonuses. */
+/** Warriors who wake on each capital, before house bonuses. */
 export const START_LEVY: Record<Difficulty, number> = { easy: 6, normal: 8, hard: 10 };
 /** House beasts who wake on each capital. */
 export const START_BEASTS: Record<Difficulty, number> = { easy: 2, normal: 1, hard: 0 };
@@ -90,16 +90,16 @@ export function isSiegeKind(kind: string): kind is SiegeKind {
 }
 
 export const UNIT_LABEL: Record<UnitKind, string> = {
-  levy: "Swordman",
-  bowman: "Bowman",
+  levy: "Warrior",
+  bowman: "Archer",
   knight: "Knight",
   dragon: "Dragon",
   beast: "Beast",
 };
 
 export const UNIT_LABEL_PLURAL: Record<UnitKind, string> = {
-  levy: "Swordmen",
-  bowman: "Bowmen",
+  levy: "Warriors",
+  bowman: "Archers",
   knight: "Knights",
   dragon: "Dragons",
   beast: "Beasts",
@@ -127,7 +127,7 @@ export interface EmpireDef {
   blurb: string;
   /** Extra wood on owned African lands (Karoo). */
   woodOnAf?: boolean;
-  /** Extra timber on owned Asian lands (Lemuria — Central and East Asia). */
+  /** Extra timber on owned Asian lands (Shangri-La — Central and East Asia). */
   woodOnAs?: boolean;
   /** Extra timber on owned American lands (Asgard — West and East America). */
   woodOnNa?: boolean;
@@ -135,13 +135,13 @@ export interface EmpireDef {
   stoneOnNa?: boolean;
   /** Extra stone on owned European lands (Atlantis). */
   stoneOnEu?: boolean;
-  /** Extra stone on owned Asian lands (Tartaria — Central and East Asia). */
+  /** Extra stone on owned Asian lands (Kunlun — Central and East Asia). */
   stoneOnAs?: boolean;
   /** Extra gold on owned Oceanian lands (Sahul). */
   goldOnOc?: boolean;
-  /** Extra gold on owned Central American lands (Aztec). */
+  /** Extra gold on owned Central American lands (Mayan). */
   goldOnCa?: boolean;
-  /** Extra gold on owned Middle Eastern lands (Babylon). */
+  /** Extra gold on owned Middle Eastern lands (Sumer). */
   goldOnMe?: boolean;
   /** Extra grain on owned African lands (Egypt). */
   foodOnAf?: boolean;
@@ -239,6 +239,8 @@ export interface MarchOrder {
   towers: number;
   ships: number;
   remaining: number;
+  /** True when independent tribes are the column — player is unused for ownership. */
+  tribal?: boolean;
 }
 
 export interface PulseEvent {
