@@ -78,7 +78,7 @@ function main() {
   const difficulty = ((process.argv[2] as Difficulty) || "easy") as Difficulty;
   console.error(`difficulty=${difficulty}`);
   const continentSizes = Object.fromEntries(
-    (["na", "ca", "sa", "eu", "af", "me", "as", "oc"] as const).map((c) => [
+    (["at", "nw", "ne", "ca", "sa", "eu", "an", "af", "me", "aw", "ae", "ss", "oc"] as const).map((c) => [
       c,
       continentTerritories(c).length,
     ]),

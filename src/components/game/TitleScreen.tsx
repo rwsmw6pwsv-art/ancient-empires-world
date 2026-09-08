@@ -79,7 +79,7 @@ export function TitleScreen() {
           <p className="text-[10px] tracking-[0.22em] text-muted uppercase">The age of dragons</p>
           <h1 className="font-display text-4xl leading-tight tracking-tight sm:text-6xl">Ancient Empires</h1>
           <div className="mt-4 max-w-xl space-y-3 text-sm leading-relaxed text-muted sm:text-base">
-            <p>Eleven courts. Eleven regions. Dragons wake when a capital falls or a region locks.</p>
+            <p>Eleven courts. Thirteen regions. Dragons wake when a capital falls or a region locks.</p>
             <p>Raise them. Spend them. Five regions write the age — or the last throne standing at turn 200.</p>
           </div>
         </header>

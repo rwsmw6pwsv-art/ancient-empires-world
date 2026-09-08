@@ -178,7 +178,7 @@ export function WorldMap({
     if (fittedKey.current === key) return;
     const lands = myIds.length
       ? myIds
-      : [state.players[0] ? empireOf(state.players[0].empire).capitol : "mesopotamia"];
+      : [state.players[0] ? empireOf(state.players[0].empire).capitol : "sumer"];
     let frames = 0;
     let raf = 0;
     const tryFit = () => {
@@ -329,7 +329,7 @@ export function WorldMap({
   return (
     <div
       ref={wrapRef}
-      className="relative h-full min-h-[240px] w-full overflow-hidden rounded-[var(--radius-lg)] bg-[#0f7484]"
+      className="relative h-full min-h-[240px] w-full overflow-hidden rounded-[var(--radius-lg)] bg-[#0a3a58]"
       style={{ touchAction: "none", userSelect: "none" }}
     >
       <svg
@@ -346,7 +346,7 @@ export function WorldMap({
       >
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <image
-            href="/map/world.webp?v=orig-restore"
+            href="/map/world.webp?v=yd-111"
             width={WORLD_W}
             height={WORLD_H}
             preserveAspectRatio="none"
@@ -623,9 +623,9 @@ export function WorldMap({
             const hp = hostDefense(state, t);
             const host = standing(t);
             const hpClass = hp <= 5 ? "is-weak" : hp >= 10 ? "is-stout" : "is-mid";
-            const fs = Math.max(6, 10 / view.k);
-            const nameFs = Math.max(5.5, 11 / view.k);
-            const infoFs = Math.max(4.5, 7.5 / view.k);
+            const fs = Math.max(5.5, 9 / view.k);
+            const nameFs = Math.max(5, 9.5 / view.k);
+            const infoFs = Math.max(4, 6.5 / view.k);
             const nameY = d.labelY + 22 / view.k;
             const regionY = nameY + nameFs * 0.4 + infoFs + Math.max(3.5, 7 / view.k);
             const region = CONTINENT_NAMES[d.continent];
@@ -663,6 +663,7 @@ export function WorldMap({
                 >
                   {d.name.toUpperCase()}
                 </text>
+                {view.k >= 1.35 ? (
                 <text
                   x={d.labelX}
                   y={regionY}
@@ -673,6 +674,7 @@ export function WorldMap({
                 >
                   {region}
                 </text>
+                ) : null}
               </g>
             );
           })}

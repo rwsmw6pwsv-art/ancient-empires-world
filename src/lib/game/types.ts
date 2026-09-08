@@ -1,4 +1,4 @@
-export type ContinentId = "nw" | "ne" | "ca" | "sa" | "eu" | "an" | "af" | "me" | "ac" | "ae" | "oc";
+export type ContinentId = "at" | "nw" | "ne" | "ca" | "sa" | "eu" | "an" | "af" | "me" | "aw" | "ae" | "ss" | "oc";
 
 export type EmpireId =
   | "atlantis"
@@ -16,12 +16,13 @@ export type EmpireId =
 export const PLAYER_COUNT = 11;
 export type PlayerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
-export const SAVE_VERSION = 68;
+export const SAVE_VERSION = 78;
 export const WIN_CONTINENTS = 5;
 export const TURN_LIMIT = 200;
 export const GAME_TAGLINE = "Five regions write the age";
 
 export const CONTINENT_NAMES: Record<ContinentId, string> = {
+  at: "Antarctica",
   nw: "West America",
   ne: "East America",
   ca: "Central America",
@@ -30,14 +31,16 @@ export const CONTINENT_NAMES: Record<ContinentId, string> = {
   an: "North Africa",
   af: "South Africa",
   me: "Middle East",
-  ac: "Central Asia",
+  aw: "West Asia",
   ae: "East Asia",
+  ss: "South Asia",
   oc: "Oceania",
 };
 
 export const NA_REGIONS: readonly ContinentId[] = ["nw", "ne"];
-export const AS_REGIONS: readonly ContinentId[] = ["ac", "ae"];
+export const AS_REGIONS: readonly ContinentId[] = ["aw", "ae", "ss"];
 export const AF_REGIONS: readonly ContinentId[] = ["an", "af"];
+export const AT_REGIONS: readonly ContinentId[] = ["at"];
 
 export const HOUSES: readonly EmpireId[] = [
   "atlantis",
@@ -54,17 +57,17 @@ export const HOUSES: readonly EmpireId[] = [
 ] as const;
 
 export const CAPITOL: Record<EmpireId, string> = {
-  atlantis: "roma",
-  lumuria: "india",
-  eldorado: "amazon",
-  aztec: "mexico",
-  asgard: "alaska",
-  tartaria: "cathay",
-  egypt: "nubia",
-  babylon: "mesopotamia",
-  cape: "cape",
-  gondwana: "coral",
-  thule: "greenland",
+  atlantis: "atlantis",
+  lumuria: "irrawaddy",
+  eldorado: "pantanal",
+  aztec: "volcan",
+  asgard: "asgard",
+  tartaria: "gobi",
+  egypt: "sahel",
+  babylon: "sumer",
+  cape: "karoo",
+  gondwana: "sahul",
+  thule: "nord",
 };
 
 export type Difficulty = "easy" | "normal" | "hard";
@@ -127,15 +130,17 @@ export interface EmpireDef {
   blurb: string;
   /** Extra wood on owned African lands (Karoo). */
   woodOnAf?: boolean;
-  /** Extra timber on owned Asian lands (Shangri-La — Central and East Asia). */
+  /** Extra timber on owned Asian lands (Shangri-La — North and South Asia). */
   woodOnAs?: boolean;
-  /** Extra timber on owned American lands (Asgard — West and East America). */
+  /** Extra timber on owned American lands (Nord — North America). */
   woodOnNa?: boolean;
-  /** Extra stone on owned American lands (Nord — West and East America). */
+  /** Extra stone on owned American lands (Nord — North America). */
   stoneOnNa?: boolean;
+  /** Extra stone on owned Antarctic lands (Asgard). */
+  stoneOnAt?: boolean;
   /** Extra stone on owned European lands (Atlantis). */
   stoneOnEu?: boolean;
-  /** Extra stone on owned Asian lands (Kunlun — Central and East Asia). */
+  /** Extra stone on owned Asian lands (Kunlun — North and South Asia). */
   stoneOnAs?: boolean;
   /** Extra gold on owned Oceanian lands (Sahul). */
   goldOnOc?: boolean;
@@ -410,6 +415,7 @@ export const SILVER_PER_LAND = 2;
 export const FOOD_PER_POP = 2;
 
 export const CONTINENT_BONUS: Record<ContinentId, number> = {
+  at: 3,
   nw: 3,
   ne: 3,
   ca: 3,
@@ -418,7 +424,8 @@ export const CONTINENT_BONUS: Record<ContinentId, number> = {
   an: 4,
   af: 4,
   me: 4,
-  ac: 3,
+  aw: 3,
   ae: 3,
+  ss: 3,
   oc: 3,
 };

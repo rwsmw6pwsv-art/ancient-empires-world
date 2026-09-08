@@ -432,7 +432,7 @@ async function main() {
   console.error(`queued ${jobs.length} games on ${workers} workers`);
   const rows = await pool(jobs, workers, (j) => spawnJob(j.empire, j.difficulty, j.seed));
   const continentSizes = Object.fromEntries(
-    (["nw", "ne", "ca", "sa", "eu", "an", "af", "me", "ac", "ae", "oc"] as const).map((c) => [
+    (["at", "nw", "ne", "ca", "sa", "eu", "an", "af", "me", "aw", "ae", "ss", "oc"] as const).map((c) => [
       c,
       continentTerritories(c).length,
     ]),

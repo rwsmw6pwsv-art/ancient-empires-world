@@ -54,6 +54,271 @@ const ADDED_LANDS: readonly string[] = [
   "sakalava",
 ];
 
+/** Lands created when regions were evened to ten. */
+const EVEN_LANDS: readonly string[] = [
+  "adelie",
+  "byrd",
+  "magellan",
+  "natal",
+  "limpopo",
+  "highveld",
+];
+
+/** Lands absorbed into a neighbour when regions were evened to ten. */
+const MERGED_LANDS: readonly string[] = [
+  "doggerland",
+  "danube",
+  "baltic",
+  "reefs",
+  "gulf",
+  "polynesia",
+];
+
+/** Lands created when regions were doubled to twenty hex seats. */
+const HEX_LANDS: readonly string[] = [
+  "ellsworth",
+  "filchner",
+  "dufek",
+  "shirase",
+  "oates",
+  "siple",
+  "berkner",
+  "pennell",
+  "thurston",
+  "getz",
+  "yukon",
+  "mackenzie",
+  "keewatin",
+  "ontario",
+  "acadia",
+  "dakota",
+  "columbia",
+  "baffin",
+  "aleut",
+  "cordillera",
+  "olmec",
+  "toltec",
+  "mixtec",
+  "zapotec",
+  "tarascan",
+  "taino",
+  "arawak",
+  "nicoya",
+  "tehuantepec",
+  "maui",
+  "chaco",
+  "parana",
+  "marajo",
+  "araguaia",
+  "araucania",
+  "altiplano",
+  "guapore",
+  "tocantins",
+  "plata",
+  "chubut",
+  "aquitaine",
+  "bohemia",
+  "dacia",
+  "thrace",
+  "lusitania",
+  "armorica",
+  "helvetia",
+  "liguria",
+  "noricum",
+  "scythia",
+  "nubia",
+  "cyrenaica",
+  "fezzan",
+  "kanem",
+  "awdaghost",
+  "axum",
+  "punt",
+  "carthage",
+  "gaetulia",
+  "timbuktu",
+  "transvaal",
+  "caprivi",
+  "nyasa",
+  "mashona",
+  "bechuana",
+  "pondoland",
+  "namaqua",
+  "sofala",
+  "lesotho",
+  "swazi",
+  "persia",
+  "media",
+  "elam",
+  "phoenicia",
+  "nabataea",
+  "cappadocia",
+  "urartu",
+  "dilmun",
+  "magan",
+  "parthia",
+  "buryatia",
+  "yakutia",
+  "manchuria",
+  "korea",
+  "dzungaria",
+  "sayan",
+  "kolyma",
+  "chukotka",
+  "ussuri",
+  "tuva",
+  "bengal",
+  "punjab",
+  "tamil",
+  "ceylon",
+  "siam",
+  "annam",
+  "java",
+  "sumatra",
+  "kashmir",
+  "tibet",
+  "zealandia",
+  "vanuatu",
+  "fiji",
+  "nullarbor",
+  "arnhem",
+  "pilbara",
+  "carpentaria",
+  "chatham",
+  "macquarie",
+  "melanesia",
+];
+
+/** Lands created when North America and North Asia were split east/west. */
+const SPLIT_LANDS: readonly string[] = [
+  "vinland",
+  "markland",
+  "helluland",
+  "erie",
+  "huron",
+  "fundy",
+  "newfoundland",
+  "nunavut",
+  "ohio",
+  "illinois",
+  "chesapeake",
+  "carolina",
+  "adirondack",
+  "ottawa",
+  "algonquin",
+  "iroquois",
+  "micmac",
+  "muskeg",
+  "winnipeg",
+  "unggava",
+  "sakhalin",
+  "hokkaido",
+  "ryukyu",
+  "primorye",
+  "magadan",
+  "okhotsk",
+  "anadyr",
+  "koryak",
+  "nanai",
+  "jeju",
+  "ezo",
+  "kuril",
+  "liaodong",
+  "jilin",
+  "heilong",
+  "ulaan",
+  "udege",
+  "oroqen",
+  "chuvan",
+  "tsushima",
+];
+
+/** Lands dropped when hexes were snapped onto one global grid. */
+const DROPPED_LANDS: readonly string[] = [
+  "mixtec",
+  "taino",
+  "timbuktu",
+  "punt",
+  "elburz",
+  "zagros",
+  "magan",
+  "oman",
+  "ussuri",
+  "sumatra",
+  "himalaya",
+  "siam",
+  "ganges",
+];
+
+/** Lands removed for sitting on water, or at the player's request. */
+const TRIMMED_LANDS: readonly string[] = [
+  "eldorado",
+  "guinea",
+  "maghreb",
+  "iberia",
+  "wilkes",
+  "sofala",
+  "arabia",
+];
+
+/** Lands placed around Yucatan, Europe, Tamil, Barrier Reef and Nullarbor. */
+const PLACE_LANDS: readonly string[] = [
+  "calusa",
+  "lucayan",
+  "ciboney",
+  "bimini",
+  "doggerland",
+  "jutland",
+  "sarmatia",
+  "mentawai",
+  "flores",
+  "timor",
+  "nicobar",
+  "loyalty",
+  "tasman",
+];
+
+/** Lands added in the second named-place pass. */
+const PLACE2_LANDS: readonly string[] = [
+  "tibesti",
+  "hoggar",
+  "scoresby",
+  "fram",
+  "tunu",
+  "tequesta",
+  "timucua",
+  "cuba",
+  "alor",
+  "coats",
+  "larsen",
+];
+
+/** Lands the player asked to remove after the first named-place pass. */
+const TRIMMED2_LANDS: readonly string[] = [
+  "nicobar",
+];
+
+/** Lands added in the third named-place pass. */
+const PLACE3_LANDS: readonly string[] = [
+  "drake",
+  "fuegia",
+  "paria",
+  "najd",
+  "gotland",
+  "iturup",
+  "kunashir",
+];
+
+/** Lands added between Olmec and Paria. */
+const PLACE4_LANDS: readonly string[] = [
+  "miskito",
+];
+
+/** Lands flooded to sea. */
+const TRIMMED4_LANDS: readonly string[] = [
+  "ottawa",
+  "unggava",
+];
+
 function blankTribe(id: string): TerritoryState {
   return {
     id,
@@ -122,6 +387,114 @@ function migrate(raw: GameState): GameState {
         if (!s.territories[id]) s.territories[id] = blankTribe(id);
       }
     }
+    if (s.version < 71) {
+      for (const id of EVEN_LANDS) {
+        if (!s.territories[id]) s.territories[id] = blankTribe(id);
+      }
+      for (const id of MERGED_LANDS) {
+        delete s.territories[id];
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
+    if (s.version < 72) {
+      for (const id of HEX_LANDS) {
+        if (!s.territories[id]) s.territories[id] = blankTribe(id);
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
+    if (s.version < 73) {
+      for (const id of SPLIT_LANDS) {
+        if (!s.territories[id]) s.territories[id] = blankTribe(id);
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
+    if (s.version < 74) {
+      for (const id of DROPPED_LANDS) {
+        delete s.territories[id];
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
+    if (s.version < 75) {
+      for (const id of PLACE_LANDS) {
+        if (!s.territories[id]) s.territories[id] = blankTribe(id);
+      }
+      for (const id of TRIMMED_LANDS) {
+        delete s.territories[id];
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
+    if (s.version < 76) {
+      for (const id of PLACE2_LANDS) {
+        if (!s.territories[id]) s.territories[id] = blankTribe(id);
+      }
+      for (const id of TRIMMED2_LANDS) {
+        delete s.territories[id];
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
+    if (s.version < 77) {
+      for (const id of PLACE3_LANDS) {
+        if (!s.territories[id]) s.territories[id] = blankTribe(id);
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
+    if (s.version < 78) {
+      for (const id of PLACE4_LANDS) {
+        if (!s.territories[id]) s.territories[id] = blankTribe(id);
+      }
+      for (const id of TRIMMED4_LANDS) {
+        delete s.territories[id];
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
   }
   if (s.jobs) {
     for (const job of s.jobs) {
@@ -163,6 +536,7 @@ export function loadGame(): GameState | null {
     const parsed = JSON.parse(raw) as GameState;
     if (!parsed || typeof parsed !== "object") return null;
     const s = migrate(parsed);
+    if (!s.territories?.asgard || !s.territories?.nord) return null;
     if (!s.players || s.players.length !== PLAYER_COUNT) return null;
     if (s.players.some((p) => !HOUSES.includes(p.empire as EmpireId))) return null;
     return s;

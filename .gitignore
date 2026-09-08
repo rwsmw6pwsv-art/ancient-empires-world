@@ -3,3 +3,16 @@ node_modules/
 .github_repo
 .env
 .env.*
+.grok/
+.vercel/
+artifacts/
+screenshots/
+attachments/
+assets/
+**/__pycache__/
+*.pyc
+.DS_Store
+dist/
+.output/
+*.log
+public/map/*.prompt.txt

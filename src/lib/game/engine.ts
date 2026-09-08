@@ -454,6 +454,7 @@ export function incomeFor(state: GameState, player: PlayerId) {
     if (def.woodOnAs && AS_REGIONS.includes(meta.continent)) wood += 1;
     if (def.woodOnNa && NA_REGIONS.includes(meta.continent)) wood += 1;
     if (def.stoneOnNa && NA_REGIONS.includes(meta.continent)) stone += 1;
+    if (def.stoneOnAt && meta.continent === "at") stone += 1;
     if (def.stoneOnEu && meta.continent === "eu") stone += 1;
     if (def.stoneOnAs && AS_REGIONS.includes(meta.continent)) stone += 1;
     if (def.goldOnOc && meta.continent === "oc") gold += 1;

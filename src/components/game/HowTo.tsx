@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 const STEPS = [
   {
     title: "One capital",
-    body: "Each of the eleven empires wakes in its seat behind stone walls. Every other land is tribal — an open camp, no palisade. Camp size follows the age: two to four warriors on Easy, three to five on Medium, five to seven on Hard — camps next to a capital wake one stronger. A raid chips a city; they only overrun an unwalled camp of one. A capital keeps a city watch even when the host is on the road, and an assault on your land opens a battle. Bounce a camp and it stays quiet for a few turns. Isolated seats — Nord and Sahul — wake with a harbour and a keel.",
+    body: "Each of the eleven empires wakes in its seat behind stone walls. Every other land is tribal — an open camp, no palisade. Camp size follows the age: two to four warriors on Easy, three to five on Medium, five to seven on Hard — camps next to a capital wake one stronger. A raid chips a city; they only overrun an unwalled camp of one. A capital keeps a city watch even when the host is on the road, and an assault on your land opens a battle. Bounce a camp and it stays quiet for a few turns. Isolated seats — Asgard on the ice and Sahul — wake with a keel.",
   },
   {
     title: "Ports, mines and markets",
@@ -19,11 +19,11 @@ const STEPS = [
   },
   {
     title: "Beasts of the house",
-    body: "Each empire raises its own host at a capital only: Atlantis direwolves, Shangri-La rhinos, El Dorado black caiman, Mayan jaguars, Asgard buffalo, Egypt lions, Sumer elephants, Sahul crocodiles, Kunlun Siberian tigers, Nord polar bears, and Karoo hippos. They are hunters, not garrison — send them with the column. Capitals wake with two beasts on Easy, one on Medium, and none on Hard. Warriors take one watch to drill, archers one, knights two, beasts three, dragons five. Beasts punch through weak wooden walls to surprise a keep. Dragons tear walls and every defence and roam the whole field; only another dragon or a scorpion can wound them. Knights ride warriors down. Defending archers stand on the keep and rain arrows. Warriors hold the melee.",
+    body: "Each empire raises its own host at a capital only: Atlantis direwolves, Shangri-La rhinos, El Dorado black caiman, Mayan jaguars, Asgard penguins, Egypt lions, Sumer elephants, Sahul crocodiles, Kunlun Siberian tigers, Nord buffalo, and Karoo hippos. They are hunters, not garrison — send them with the column. Capitals wake with two beasts on Easy, one on Medium, and none on Hard. Warriors take one watch to drill, archers one, knights two, beasts three, dragons five. Beasts punch through weak wooden walls to surprise a keep. Dragons tear walls and every defence and roam the whole field; only another dragon or a scorpion can wound them. Knights ride warriors down. Defending archers stand on the keep and rain arrows. Warriors hold the melee.",
   },
   {
     title: "Ships",
-    body: "A finished port lets you lay keels. Rank I holds two, rank II four, rank III six. A beach without a port berths one arriving keel. Each ship sails with the host across water and docks at the landing. After the fight you may leave it there or send it home with the column. A wiped landing loses the keel. Columns take a watch to arrive, land or sea — you may send several in the same watch to different shores. Each ship also pays two trade gold. Nord and Sahul wake with a keel already in harbour.",
+    body: "A finished port lets you lay keels. Rank I holds two, rank II four, rank III six. A beach without a port berths one arriving keel. Each ship sails with the host across water and docks at the landing. After the fight you may leave it there or send it home with the column. A wiped landing loses the keel. Columns take a watch to arrive, land or sea — you may send several in the same watch to different shores. Each ship also pays two trade gold. Asgard and Sahul wake with a keel already in harbour.",
   },
   {
     title: "Siege engines",
@@ -44,7 +44,7 @@ export function HowTo({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-bg/70 p-4 sm:items-center">
       <div className="panel w-full max-w-lg p-6 shadow-2xl">
         <p className="font-display text-xs tracking-[0.22em] text-muted uppercase">How to play</p>
-        <h2 className="mt-2 font-display text-2xl text-fg">Eleven empires, eleven regions</h2>
+        <h2 className="mt-2 font-display text-2xl text-fg">Eleven empires, thirteen regions</h2>
         <ol className="mt-5 space-y-4">
           {STEPS.map((s, i) => (
             <li key={s.title} className="flex gap-3">

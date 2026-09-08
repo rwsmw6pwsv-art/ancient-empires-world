@@ -105,13 +105,13 @@ svg.touch-none:active {
 
 .map-border.is-owned {
   stroke: var(--house);
-  stroke-width: 3.2;
+  stroke-width: 2.2;
 }
 
 .map-border.is-barbarian {
   stroke: #d2b48c;
-  stroke-width: 1.2;
-  opacity: 0.7;
+  stroke-width: 1.35;
+  opacity: 0.85;
 }
 
 .map-border.is-target {
