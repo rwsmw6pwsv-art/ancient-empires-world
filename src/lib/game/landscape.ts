@@ -42,7 +42,10 @@ export type FaunaId =
   | "crocodile"
   | "siberian-tiger"
   | "grizzly"
-  | "hippo";
+  | "hippo"
+  | "mastodon"
+  | "sabertooth"
+  | "mammoth";
 
 export type WonderId =
   | "pyramids"
@@ -124,6 +127,9 @@ export const FAUNA_LABEL: Record<FaunaId, string> = {
   "siberian-tiger": "Siberian tigers",
   grizzly: "grizzly bears",
   hippo: "hippos",
+  mastodon: "mastodons",
+  sabertooth: "sabertooths",
+  mammoth: "mammoths",
 };
 
 export const WONDER_LABEL: Record<WonderId, string> = {
@@ -234,10 +240,11 @@ export const CAPITAL_SRC: Record<EmpireId, string> = {
   asgard: "/map/props/capitals/asgard.svg",
   tartaria: "/map/props/capitals/tartaria.svg",
   egypt: "/map/props/capitals/egypt.svg",
-  babylon: "/map/props/capitals/babylon.svg",
+  siberia: "/map/props/capitals/siberia.svg",
   cape: "/map/props/capitals/cape.svg",
   gondwana: "/map/props/capitals/gondwana.svg",
   thule: "/map/props/capitals/thule.svg",
+  alaska: "/map/props/capitals/alaska.svg",
 };
 
 export const CONTINENT_TOWN_SRC: Record<ContinentId, string> = {
@@ -300,21 +307,24 @@ export const FAUNA_SRC: Record<FaunaId, string> = {
   "siberian-tiger": "/map/fauna/siberian-tiger.png",
   grizzly: "/map/fauna/grizzly.png",
   hippo: "/map/fauna/hippo.png",
+  mastodon: "/map/fauna/mastodon.png",
+  sabertooth: "/map/fauna/sabertooth.png",
+  mammoth: "/map/fauna/mammoth.png",
 };
 
 export type BeastId =
   | "direwolf"
-  | "rhino"
-  | "caiman"
-  | "jaguar"
-  | "buffalo"
-  | "lion"
   | "elephant"
-  | "crocodile"
-  | "siberian-tiger"
-  | "polar-bear"
+  | "mastodon"
+  | "jaguar"
+  | "tiger"
+  | "grizzly"
+  | "lion"
   | "hippo"
-  | "penguin";
+  | "crocodile"
+  | "sabertooth"
+  | "mammoth"
+  | "polar-bear";
 
 export interface BeastDef {
   id: BeastId;
@@ -325,47 +335,48 @@ export interface BeastDef {
 }
 
 export const EMPIRE_BEAST: Record<EmpireId, BeastDef> = {
-  atlantis: { id: "direwolf", name: "Direwolves", atk: 16, def: 8, cost: 8 },
-  lumuria: { id: "rhino", name: "Rhinos", atk: 14, def: 10, cost: 8 },
-  eldorado: { id: "caiman", name: "Black caiman", atk: 13, def: 8, cost: 7 },
-  aztec: { id: "jaguar", name: "Jaguars", atk: 13, def: 6, cost: 8 },
-  asgard: { id: "penguin", name: "Penguins", atk: 14, def: 10, cost: 8 },
-  egypt: { id: "lion", name: "Lions", atk: 14, def: 7, cost: 7 },
-  babylon: { id: "elephant", name: "Elephants", atk: 16, def: 10, cost: 10 },
-  gondwana: { id: "crocodile", name: "Crocodiles", atk: 13, def: 8, cost: 7 },
-  tartaria: { id: "siberian-tiger", name: "Siberian tigers", atk: 15, def: 9, cost: 9 },
-  thule: { id: "buffalo", name: "Buffalo", atk: 13, def: 8, cost: 7 },
-  cape: { id: "hippo", name: "Hippos", atk: 15, def: 10, cost: 9 },
+  asgard: { id: "polar-bear", name: "Polar bear", atk: 15, def: 10, cost: 9 },
+  eldorado: { id: "mastodon", name: "Mastodon", atk: 16, def: 10, cost: 10 },
+  aztec: { id: "jaguar", name: "Jaguar", atk: 13, def: 6, cost: 8 },
+  tartaria: { id: "tiger", name: "Tiger", atk: 15, def: 9, cost: 9 },
+  siberia: { id: "grizzly", name: "Grizzly", atk: 15, def: 9, cost: 8 },
+  lumuria: { id: "elephant", name: "Elephant", atk: 16, def: 10, cost: 10 },
+  egypt: { id: "lion", name: "Lion", atk: 14, def: 7, cost: 7 },
+  cape: { id: "hippo", name: "Hippo", atk: 15, def: 10, cost: 9 },
+  gondwana: { id: "crocodile", name: "Crocodile", atk: 13, def: 8, cost: 7 },
+  thule: { id: "sabertooth", name: "Sabertooth", atk: 16, def: 7, cost: 9 },
+  alaska: { id: "mammoth", name: "Mammoth", atk: 16, def: 11, cost: 10 },
+  atlantis: { id: "direwolf", name: "Direwolf", atk: 16, def: 8, cost: 8 },
 };
 
 export const BEAST_SRC: Record<BeastId, string> = {
   direwolf: "/map/fauna/direwolf.png",
-  rhino: "/map/fauna/rhino.png",
-  caiman: "/map/fauna/caiman.png",
-  jaguar: "/map/fauna/jaguar.png",
-  buffalo: "/map/fauna/buffalo.png",
-  lion: "/map/fauna/lion.png",
   elephant: "/map/fauna/elephant.png",
-  crocodile: "/map/fauna/crocodile.png",
-  "siberian-tiger": "/map/fauna/siberian-tiger.png",
-  "polar-bear": "/map/fauna/polar-bear.png",
+  mastodon: "/map/fauna/mastodon.png?v=2",
+  jaguar: "/map/fauna/jaguar.png",
+  tiger: "/map/fauna/tiger.png",
+  grizzly: "/map/fauna/grizzly.png",
+  lion: "/map/fauna/lion.png",
   hippo: "/map/fauna/hippo.png",
-  penguin: "/map/fauna/penguin.png",
+  crocodile: "/map/fauna/crocodile.png",
+  sabertooth: "/map/fauna/sabertooth.png?v=2",
+  mammoth: "/map/fauna/mammoth.png?v=2",
+  "polar-bear": "/map/fauna/polar-bear.png",
 };
 
 export const BEAST_LABEL: Record<BeastId, string> = {
-  direwolf: "Direwolves",
-  rhino: "Rhinos",
-  caiman: "Black caiman",
-  jaguar: "Jaguars",
-  buffalo: "Buffalo",
-  lion: "Lions",
-  elephant: "Elephants",
-  crocodile: "Crocodiles",
-  "siberian-tiger": "Siberian tigers",
-  "polar-bear": "Polar bears",
-  hippo: "Hippos",
-  penguin: "Penguins",
+  direwolf: "Direwolf",
+  elephant: "Elephant",
+  mastodon: "Mastodon",
+  jaguar: "Jaguar",
+  tiger: "Tiger",
+  grizzly: "Grizzly",
+  lion: "Lion",
+  hippo: "Hippo",
+  crocodile: "Crocodile",
+  sabertooth: "Sabertooth",
+  mammoth: "Mammoth",
+  "polar-bear": "Polar bear",
 };
 
 export function beastOf(empire: EmpireId): BeastDef {

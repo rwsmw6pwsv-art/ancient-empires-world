@@ -346,7 +346,7 @@ export function WorldMap({
       >
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <image
-            href="/map/world.webp?v=yd-111"
+            href="/map/world.webp?v=yd-112"
             width={WORLD_W}
             height={WORLD_H}
             preserveAspectRatio="none"
@@ -549,6 +549,18 @@ export function WorldMap({
               fontSize={Math.max(7, 12 / view.k)}
             >
               {o.name}
+            </text>
+          ))}
+          {TERRITORIES.map((d) => (
+            <text
+              key={`num-${d.id}`}
+              x={d.labelX}
+              y={d.labelY - 12}
+              className="map-num"
+              textAnchor="middle"
+              fontSize={Math.max(5.5, 8 / Math.sqrt(view.k))}
+            >
+              {d.name}
             </text>
           ))}
           {TERRITORIES.map((d) => {

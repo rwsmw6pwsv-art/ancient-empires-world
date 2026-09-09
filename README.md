@@ -1,32 +1,27 @@
 # Ancient Empires
 
-Turn-based strategy on an ice-age world. Eleven courts. Thirteen regions. Two hundred sixty-nine hex lands.
+Turn-based strategy on an ice-age world. Twelve courts. Thirteen regions. Two hundred sixty-nine hex lands.
 
 Pick a house, claim its capital, then march, siege, and lock regions before rival courts do.
 
-## The world
-
-| Region | Lands |
-| --- | ---: |
-| West America | 23 |
-| East America | 23 |
-| Central America | 21 |
-| South America | 22 |
-| Europe | 20 |
-| North Africa | 19 |
-| South Africa | 19 |
-| Middle East | 21 |
-| West Asia | 18 |
-| East Asia | 22 |
-| South Asia | 18 |
-| Oceania | 21 |
-| Antarctica | 22 |
-
-Land bridges include Beringia–Kamchatka, Peninsula–Weddell, and Tocantins–Fuegia–Drake–Weddell.
-
 ## Courts
 
-Atlantis, Lumuria, Eldorado, Aztec, Asgard, Tartaria, Egypt, Babylon, Cape, Gondwana, and Thule. Each starts on a named capital.
+| Empire | Region | Beast |
+| --- | --- | --- |
+| Asgard | Antarctica | Polar bear |
+| El Dorado | South America | Mastodon |
+| Mayan | Central America | Jaguar |
+| Kunlun | East Asia | Tiger |
+| Siberia | West Asia | Grizzly |
+| Shangri-La | South Asia | Elephant |
+| Egypt | North Africa | Lion |
+| Karoo | South Africa | Hippo |
+| Sahul | Oceania | Crocodile |
+| Nord | East America | Sabertooth |
+| Alaska | West America | Mammoth |
+| Atlantis | Europe | Direwolf |
+
+Lands are named for terrain, not countries — ice, veld, ghat, reef. Middle East has no throne — it is tribal ground.
 
 ## Play
 

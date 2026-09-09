@@ -90,7 +90,7 @@ function terrainMods(
   let atk = 0;
   let def = 0;
   if (terrain === "jungle" && kind === "beast") atk += 2;
-  if ((terrain === "ice" || terrain === "tundra") && empire === "thule") def += 2;
+  if ((terrain === "ice" || terrain === "tundra") && (empire === "thule" || empire === "alaska" || empire === "asgard")) def += 2;
   if (terrain === "mountain" && side === "def") def += 2;
   return { atk, def };
 }

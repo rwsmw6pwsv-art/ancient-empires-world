@@ -154,7 +154,7 @@ export function ProvinceBanner({ state, selected }: { state: GameState; selected
     <div className="max-w-[16rem] rounded-[var(--radius-md)] border border-border bg-surface/90 px-2.5 py-1.5 backdrop-blur-sm sm:max-w-xs">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-display text-sm tracking-wide uppercase">{meta.name}</p>
+          <p className="font-display text-sm tabular-nums tracking-wide">{meta.name}</p>
           <p className="truncate text-[11px] text-muted">
             {CONTINENT_NAMES[meta.continent]}
             {capHouse ? ` · ${empireOf(capHouse as EmpireId).name}` : ` · ${ownerLabel}`}

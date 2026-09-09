@@ -57,6 +57,8 @@ import {
   FOOD_PER_POP,
   START_LEVY,
   START_BEASTS,
+  START_BOWMEN,
+  START_KNIGHTS,
   SIEGE_CAP,
   SIEGE_COST,
   SIEGE_LABEL,
@@ -459,7 +461,6 @@ export function incomeFor(state: GameState, player: PlayerId) {
     if (def.stoneOnAs && AS_REGIONS.includes(meta.continent)) stone += 1;
     if (def.goldOnOc && meta.continent === "oc") gold += 1;
     if (def.goldOnCa && meta.continent === "ca") gold += 1;
-    if (def.goldOnMe && meta.continent === "me") gold += 1;
     if (def.foodOnAf && AF_REGIONS.includes(meta.continent)) food += 1;
   }
   const kinds: Record<"gold" | "silver" | "wood" | "stone" | "metal" | "food", number> = {
@@ -735,7 +736,7 @@ export function createNewGame(opts: {
     marches: [],
     arrivals: [],
     events: [],
-    log: [`The eleven empires take the field. Only the capitals are yours.`],
+    log: [`The twelve empires take the field. Only the capitals are yours.`],
     marchFrom: null,
     winner: null,
     nextJobId: 1,
@@ -747,7 +748,8 @@ export function createNewGame(opts: {
     const startLevy = START_LEVY[difficulty];
     grantTerritory(state, cap, p.id, {
       levy: startLevy,
-      knights: 0,
+      bowmen: START_BOWMEN[difficulty],
+      knights: START_KNIGHTS[difficulty],
       beasts: START_BEASTS[difficulty],
       castle: true,
       castleRank: 2,

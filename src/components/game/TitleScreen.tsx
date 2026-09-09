@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { EMPIRE_LIST } from "@/lib/game/empires";
-import { BEAST_SRC, CAPITAL_SRC, beastOf } from "@/lib/game/landscape";
+import { BEAST_SRC, beastOf } from "@/lib/game/landscape";
 import { DIFFICULTIES, OPENINGS, playHref } from "@/lib/game/campaign";
-import { type Difficulty, type EmpireId } from "@/lib/game/types";
+import { CONTINENT_NAMES, type Difficulty, type EmpireId } from "@/lib/game/types";
 import { hasSave } from "@/lib/game/save";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -45,13 +45,14 @@ function paintMeridians(canvas: HTMLCanvasElement) {
 
 export function TitleScreen() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [empire, setEmpire] = useState<EmpireId>("babylon");
+  const [empire, setEmpire] = useState<EmpireId>("asgard");
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [help, setHelp] = useState(false);
   const [canResume, setCanResume] = useState(false);
   const chosen = EMPIRE_LIST.find((e) => e.id === empire)!;
   const chosenBeast = beastOf(empire);
   const start = playHref(empire, difficulty, OPENINGS[0]!.id);
+  const chosenRegion = CONTINENT_NAMES[chosen.region];
 
   useEffect(() => {
     setCanResume(hasSave());
@@ -75,13 +76,23 @@ export function TitleScreen() {
         aria-hidden="true"
       />
       <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 pb-28 sm:px-8 sm:py-12">
-        <header className="reveal max-w-xl">
-          <p className="text-[10px] tracking-[0.22em] text-muted uppercase">The age of dragons</p>
-          <h1 className="font-display text-4xl leading-tight tracking-tight sm:text-6xl">Ancient Empires</h1>
-          <div className="mt-4 max-w-xl space-y-3 text-sm leading-relaxed text-muted sm:text-base">
-            <p>Eleven courts. Thirteen regions. Dragons wake when a capital falls or a region locks.</p>
-            <p>Raise them. Spend them. Five regions write the age — or the last throne standing at turn 200.</p>
+        <header className="reveal flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+          <div className="max-w-xl">
+            <p className="text-[10px] tracking-[0.22em] text-muted uppercase">The age of dragons</p>
+            <h1 className="font-display text-4xl leading-tight tracking-tight sm:text-6xl">Ancient Empires</h1>
+            <div className="mt-4 max-w-xl space-y-3 text-sm leading-relaxed text-muted sm:text-base">
+              <p>Twelve courts. Thirteen regions. Dragons wake when a capital falls or a region locks.</p>
+              <p>Raise them. Spend them. Five regions write the age — or the last throne standing at turn 200.</p>
+            </div>
           </div>
+          <img
+            src="/map/title-dragon.jpg"
+            alt=""
+            width={1200}
+            height={800}
+            decoding="async"
+            className="mx-auto h-44 w-auto object-contain sm:mx-0 sm:h-56 lg:h-72"
+          />
         </header>
 
         <section>
@@ -89,6 +100,7 @@ export function TitleScreen() {
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {EMPIRE_LIST.map((e) => {
               const beast = beastOf(e.id);
+              const region = CONTINENT_NAMES[e.region];
               return (
                 <button
                   key={e.id}
@@ -96,17 +108,23 @@ export function TitleScreen() {
                   onClick={() => setEmpire(e.id)}
                   className={cn(
                     "empire-" + e.id,
-                    "relative z-10 rounded-[var(--radius-md)] border border-border bg-raised/80 p-3 text-left transition-colors",
+                    "relative z-10 rounded-[var(--radius-md)] border border-border bg-raised/80 p-3 text-center transition-colors",
                     empire === e.id && "border-fg bg-surface",
                   )}
                 >
-                  <span className="mb-2 flex items-center gap-2">
-                    <img src={CAPITAL_SRC[e.id]} alt="" width={28} height={28} className="h-7 w-7 object-contain" />
-                    <span className="house-swatch ml-auto h-1.5 w-8 rounded-full" />
+                  <span className="mx-auto mb-1 flex h-20 w-full items-center justify-center sm:h-24">
+                    <img
+                      src={BEAST_SRC[beast.id]}
+                      alt=""
+                      width={160}
+                      height={160}
+                      decoding="async"
+                      className="max-h-full max-w-full object-contain"
+                    />
                   </span>
-                  <span className="block font-display text-sm">{e.name}</span>
-                  <span className="mt-1 block text-xs text-muted">{beast.name}</span>
-                  <span className="mt-1 block text-xs leading-snug text-muted">{e.blurb}</span>
+                  <span className="mt-1 block font-display text-sm">{e.name}</span>
+                  <span className="mt-0.5 block text-xs text-muted">{region}</span>
+                  <span className="house-swatch mx-auto mt-2 block h-1.5 w-8 rounded-full" />
                 </button>
               );
             })}
@@ -114,18 +132,20 @@ export function TitleScreen() {
         </section>
 
         <section className="panel flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-          <img
-            src={BEAST_SRC[chosenBeast.id]}
-            alt=""
-            width={96}
-            height={96}
-            decoding="async"
-            className="hidden h-24 w-24 rounded-[var(--radius-md)] object-contain sm:block"
-          />
+          <span className="hidden h-24 w-24 shrink-0 items-center justify-center sm:flex">
+            <img
+              src={BEAST_SRC[chosenBeast.id]}
+              alt=""
+              width={96}
+              height={96}
+              decoding="async"
+              className="max-h-full max-w-full object-contain"
+            />
+          </span>
           <div className="flex-1">
             <p className="font-display text-lg text-fg">{chosen.name}</p>
             <p className="text-sm text-muted">
-              {chosenBeast.name} at the gate. A dragon wakes on a taken capital, and again when you lock a region.
+              {chosenBeast.name} of {chosenRegion}. A dragon wakes on a taken capital, and again when you lock a region.
             </p>
             <p className="mt-3 text-xs tracking-[0.18em] text-muted uppercase">Difficulty</p>
             <div className="mt-2 flex flex-wrap gap-2">

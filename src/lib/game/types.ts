@@ -8,15 +8,16 @@ export type EmpireId =
   | "asgard"
   | "tartaria"
   | "egypt"
-  | "babylon"
+  | "siberia"
   | "cape"
   | "gondwana"
-  | "thule";
+  | "thule"
+  | "alaska";
 
-export const PLAYER_COUNT = 11;
-export type PlayerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+export const PLAYER_COUNT = 12;
+export type PlayerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
 
-export const SAVE_VERSION = 78;
+export const SAVE_VERSION = 80;
 export const WIN_CONTINENTS = 5;
 export const TURN_LIMIT = 200;
 export const GAME_TAGLINE = "Five regions write the age";
@@ -43,39 +44,45 @@ export const AF_REGIONS: readonly ContinentId[] = ["an", "af"];
 export const AT_REGIONS: readonly ContinentId[] = ["at"];
 
 export const HOUSES: readonly EmpireId[] = [
-  "atlantis",
-  "lumuria",
+  "asgard",
   "eldorado",
   "aztec",
-  "asgard",
   "tartaria",
+  "siberia",
+  "lumuria",
   "egypt",
-  "babylon",
   "cape",
   "gondwana",
   "thule",
+  "alaska",
+  "atlantis",
 ] as const;
 
 export const CAPITOL: Record<EmpireId, string> = {
-  atlantis: "atlantis",
-  lumuria: "irrawaddy",
+  asgard: "asgard",
   eldorado: "pantanal",
   aztec: "volcan",
-  asgard: "asgard",
   tartaria: "gobi",
+  siberia: "siberia",
+  lumuria: "irrawaddy",
   egypt: "sahel",
-  babylon: "sumer",
   cape: "karoo",
   gondwana: "sahul",
   thule: "nord",
+  alaska: "yukon",
+  atlantis: "atlantis",
 };
 
 export type Difficulty = "easy" | "normal" | "hard";
 export type Opening = "capital";
-/** Warriors who wake on each capital, before house bonuses. */
-export const START_LEVY: Record<Difficulty, number> = { easy: 6, normal: 8, hard: 10 };
+/** Warriors who wake on each capital. */
+export const START_LEVY: Record<Difficulty, number> = { easy: 10, normal: 5, hard: 3 };
+/** Archers who wake on each capital. */
+export const START_BOWMEN: Record<Difficulty, number> = { easy: 10, normal: 5, hard: 3 };
+/** Knights who wake on each capital. */
+export const START_KNIGHTS: Record<Difficulty, number> = { easy: 5, normal: 3, hard: 2 };
 /** House beasts who wake on each capital. */
-export const START_BEASTS: Record<Difficulty, number> = { easy: 2, normal: 1, hard: 0 };
+export const START_BEASTS: Record<Difficulty, number> = { easy: 3, normal: 2, hard: 1 };
 
 export type UnitKind = "levy" | "bowman" | "knight" | "dragon" | "beast";
 export type SiegeKind = "ram" | "catapult" | "ladder" | "tower";
@@ -125,6 +132,7 @@ export interface EmpireDef {
   name: string;
   adjective: string;
   capitol: string;
+  region: ContinentId;
   homes: readonly string[];
   color: string;
   blurb: string;
@@ -146,8 +154,6 @@ export interface EmpireDef {
   goldOnOc?: boolean;
   /** Extra gold on owned Central American lands (Mayan). */
   goldOnCa?: boolean;
-  /** Extra gold on owned Middle Eastern lands (Sumer). */
-  goldOnMe?: boolean;
   /** Extra grain on owned African lands (Egypt). */
   foodOnAf?: boolean;
   shipWoodCost?: number;

@@ -46,17 +46,18 @@
   }
 }
 
-.empire-atlantis, .house-0 { --house: #2ad4cc; }
-.empire-lumuria, .house-1 { --house: #f43f9a; }
-.empire-eldorado, .house-2 { --house: #f0a33c; }
-.empire-aztec, .house-3 { --house: #ef233c; }
-.empire-asgard, .house-4 { --house: #6fe0ff; }
-.empire-tartaria, .house-5 { --house: #3b82f6; }
+.empire-atlantis, .house-11 { --house: #2ad4cc; }
+.empire-lumuria, .house-5 { --house: #f43f9a; }
+.empire-eldorado, .house-1 { --house: #f0a33c; }
+.empire-aztec, .house-2 { --house: #ef233c; }
+.empire-asgard, .house-0 { --house: #6fe0ff; }
+.empire-tartaria, .house-3 { --house: #3b82f6; }
 .empire-egypt, .house-6 { --house: #f5c542; }
-.empire-babylon, .house-7 { --house: #c084fc; }
-.empire-cape, .house-8 { --house: #22c55e; }
-.empire-gondwana, .house-9 { --house: #ff8a65; }
-.empire-thule, .house-10 { --house: #7eb6d9; }
+.empire-siberia, .house-4 { --house: #8f6a43; }
+.empire-cape, .house-7 { --house: #22c55e; }
+.empire-gondwana, .house-8 { --house: #ff8a65; }
+.empire-thule, .house-9 { --house: #7eb6d9; }
+.empire-alaska, .house-10 { --house: #d7c4a3; }
 
 .house-swatch {
   background: var(--house);
@@ -176,6 +177,17 @@ svg.touch-none:active {
   fill: #9ee7d8;
   font-family: var(--font-display);
   letter-spacing: 0.18em;
+  pointer-events: none;
+}
+
+.map-num {
+  fill: #f4ead4;
+  stroke: #1a1410;
+  stroke-width: 0.65px;
+  paint-order: stroke fill;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.02em;
   pointer-events: none;
 }
 
