@@ -1,4 +1,4 @@
-import { Footprints, Hammer, Swords } from "lucide-react";
+import { Footprints, Hammer, Shield, Swords } from "lucide-react";
 import { BATTLE_UNIT_SRC, PROP_SRC, RESOURCE_TINT, SIEGE_SRC, fortProp } from "@/lib/game/landscape";
 import type { SiegeKind, UnitKind } from "@/lib/game/types";
 import { SIEGE_LABEL, UNIT_LABEL_PLURAL } from "@/lib/game/types";
@@ -133,8 +133,8 @@ export function WorkMark({ kind, fort }: { kind: "port" | "castle" | "market" | 
   return <img src={src} alt="" className="hud-icon" />;
 }
 
-export function ActionIcon({ kind, className }: { kind: "train" | "march" | "build"; className?: string }) {
-  const Icon = kind === "train" ? Swords : kind === "march" ? Footprints : Hammer;
+export function ActionIcon({ kind, className }: { kind: "train" | "march" | "build" | "defend"; className?: string }) {
+  const Icon = kind === "train" ? Swords : kind === "march" ? Footprints : kind === "defend" ? Shield : Hammer;
   return <Icon className={cn("size-4", `act-${kind}`, className)} aria-hidden="true" />;
 }
 

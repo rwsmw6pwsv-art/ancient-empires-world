@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DrillRouteImport } from './routes/drill'
 import { Route as PlayEmpireDifficultyOpeningRouteImport } from './routes/play.$empire.$difficulty.$opening'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DrillRoute = DrillRouteImport.update({
+  id: '/drill',
+  path: '/drill',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlayEmpireDifficultyOpeningRoute =
@@ -26,27 +32,31 @@ const PlayEmpireDifficultyOpeningRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/drill': typeof DrillRoute
   '/play/$empire/$difficulty/$opening': typeof PlayEmpireDifficultyOpeningRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/drill': typeof DrillRoute
   '/play/$empire/$difficulty/$opening': typeof PlayEmpireDifficultyOpeningRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/drill': typeof DrillRoute
   '/play/$empire/$difficulty/$opening': typeof PlayEmpireDifficultyOpeningRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/play/$empire/$difficulty/$opening'
+  fullPaths: '/' | '/drill' | '/play/$empire/$difficulty/$opening'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/play/$empire/$difficulty/$opening'
-  id: '__root__' | '/' | '/play/$empire/$difficulty/$opening'
+  to: '/' | '/drill' | '/play/$empire/$difficulty/$opening'
+  id: '__root__' | '/' | '/drill' | '/play/$empire/$difficulty/$opening'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DrillRoute: typeof DrillRoute
   PlayEmpireDifficultyOpeningRoute: typeof PlayEmpireDifficultyOpeningRoute
 }
 
@@ -57,6 +67,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/drill': {
+      id: '/drill'
+      path: '/drill'
+      fullPath: '/drill'
+      preLoaderRoute: typeof DrillRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/play/$empire/$difficulty/$opening': {
@@ -71,6 +88,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DrillRoute: DrillRoute,
   PlayEmpireDifficultyOpeningRoute: PlayEmpireDifficultyOpeningRoute,
 }
 export const routeTree = rootRouteImport

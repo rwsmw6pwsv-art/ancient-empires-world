@@ -1,7 +1,6 @@
 import { empireOf } from "@/lib/game/empires";
 import { continentsHeld, foodNeed, incomeFor, ownedIds, rankPlayers, realmPopulation, upkeepFor } from "@/lib/game/engine";
 import type { GameState } from "@/lib/game/types";
-import { TURN_LIMIT } from "@/lib/game/types";
 import { DIFFICULTIES } from "@/lib/game/campaign";
 import { Button } from "@/components/ui/button";
 import { ResourceMark } from "./Cost";
@@ -31,7 +30,7 @@ export function Hud({ state, onEnd, onQuit }: { state: GameState; onEnd: () => v
             {myTurn ? `Your watch — ${house.name}` : `${empireOf(whose.empire).name}’s watch`}
             <span className="text-muted">
               {" "}
-              · {age} · Turn {state.clock.turn}/{TURN_LIMIT} · {cont} regions · {lands} lands · {pop} citizens
+              · {age} · Turn {state.clock.turn} · {cont} regions · {lands} lands · {pop} citizens
               {leading ? " · leading" : ""}
             </span>
           </p>
@@ -44,7 +43,7 @@ export function Hud({ state, onEnd, onQuit }: { state: GameState; onEnd: () => v
             </Button>
           </span>
           <span className="inline-flex items-center gap-1">
-            <Hint align="end" text="Pass the court. The other empires act, then a watch report opens." />
+            <Hint align="end" text="End your watch. The other empires act, then a watch report opens." />
             <Button size="sm" disabled={!myTurn} onClick={onEnd}>
               End watch
             </Button>

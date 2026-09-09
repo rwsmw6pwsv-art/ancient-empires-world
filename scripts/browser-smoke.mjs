@@ -110,6 +110,10 @@ try {
     const resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     const status = resp?.status() ?? 0;
     await page.waitForTimeout(1000);
+    await page
+      .locator(".load-screen")
+      .waitFor({ state: "detached", timeout: Math.min(20000, timeoutMs) })
+      .catch(() => {});
 
     const title = await page.title();
     const hasCanvas = (await page.locator("canvas").count()) > 0;

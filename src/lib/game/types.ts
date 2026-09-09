@@ -12,15 +12,17 @@ export type EmpireId =
   | "cape"
   | "gondwana"
   | "thule"
-  | "alaska";
+  | "alaska"
+  | "sumer";
 
-export const PLAYER_COUNT = 12;
-export type PlayerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+export const PLAYER_COUNT = 13;
+export type PlayerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 
-export const SAVE_VERSION = 80;
-export const WIN_CONTINENTS = 5;
+export const SAVE_VERSION = 84;
+export const WIN_CONTINENTS = 7;
+/** Sim/safety cap only — the campaign has no turn limit. */
 export const TURN_LIMIT = 200;
-export const GAME_TAGLINE = "Five regions write the age";
+export const GAME_TAGLINE = "Seven regions write the age";
 
 export const CONTINENT_NAMES: Record<ContinentId, string> = {
   at: "Antarctica",
@@ -51,6 +53,7 @@ export const HOUSES: readonly EmpireId[] = [
   "siberia",
   "lumuria",
   "egypt",
+  "sumer",
   "cape",
   "gondwana",
   "thule",
@@ -66,6 +69,7 @@ export const CAPITOL: Record<EmpireId, string> = {
   siberia: "siberia",
   lumuria: "irrawaddy",
   egypt: "sahel",
+  sumer: "tigris",
   cape: "karoo",
   gondwana: "sahul",
   thule: "nord",
@@ -87,7 +91,7 @@ export const START_BEASTS: Record<Difficulty, number> = { easy: 3, normal: 2, ha
 export type UnitKind = "levy" | "bowman" | "knight" | "dragon" | "beast";
 export type SiegeKind = "ram" | "catapult" | "ladder" | "tower";
 
-export type JobKind = "castle" | "mine" | "port" | "ship" | "market" | "road" | "farm" | "scorpion" | SiegeKind | UnitKind;
+export type JobKind = "castle" | "mine" | "port" | "ship" | "market" | "road" | "farm" | "scorpion" | "walls" | "outer-walls" | "keep-works" | "towers" | "moats" | SiegeKind | UnitKind;
 
 export function isTrainKind(kind: string): kind is UnitKind {
   return kind === "levy" || kind === "bowman" || kind === "knight" || kind === "dragon" || kind === "beast";
@@ -195,8 +199,22 @@ export interface TerritoryState {
   ladders: number;
   towers: number;
   scorpions: number;
+  /** Inner walls 0–5 (wood → colossal stone). */
+  wallRank: number;
+  /** Outer walls 0–5. */
+  outerWallRank: number;
+  /** Keep 0–5. */
+  keepRank: number;
+  /** Wall towers 0–5. */
+  towerRank: number;
+  /** Moats 0–3. */
+  moatRank: number;
+  /** Scorpion battery 0–5. */
+  scorpionRank: number;
   /** 0 none, 1 wooden walls, 2 stone walls, 3 wooden keep, 4 stone keep. */
   fort: number;
+  /** 0 none, 1 normal, 2 special (capital), 3 rare (region). */
+  dragonTier: number;
   /** Catapult hits already landed on this city before the assault. */
   breach: number;
   /** Neighbouring city that currently lays siege here. */
@@ -218,6 +236,8 @@ export interface PlayerState {
   alive: boolean;
   human: boolean;
   cards: CardId[];
+  specialDragons: number;
+  rareDragons: number;
 }
 
 export interface Job {
@@ -328,7 +348,7 @@ export const UNIT_ATK: Record<UnitKind, number> = {
   bowman: 1,
   knight: 2,
   beast: 7,
-  dragon: 25,
+  dragon: 50,
 };
 
 export const UNIT_DEF: Record<UnitKind, number> = {
@@ -336,7 +356,7 @@ export const UNIT_DEF: Record<UnitKind, number> = {
   bowman: 3,
   knight: 2,
   beast: 8,
-  dragon: 25,
+  dragon: 50,
 };
 
 /** Hit points per body on the field. */
@@ -345,7 +365,7 @@ export const UNIT_HP: Record<UnitKind, number> = {
   bowman: 1,
   knight: 2,
   beast: 3,
-  dragon: 5,
+  dragon: 10,
 };
 
 /** Attack value — used where a single strength is needed. */
@@ -372,16 +392,24 @@ export const UNIT_TURNS: Record<UnitKind, number> = {
   beast: 3,
   dragon: 5,
 };
-export const DRAGON_CAP = 1;
+export const DRAGON_CAP = 99;
+/** Bodies of each kind that can stand a city, a drill host, or the field. */
+export const UNIT_CAP: Record<UnitKind, number> = {
+  levy: 100,
+  bowman: 50,
+  knight: 25,
+  beast: 25,
+  dragon: DRAGON_CAP,
+};
 /** Highest rank for markets, ports, mines and walls. */
 export const WORKS_CAP = 3;
 /** Keels per harbour rank (I=2, II=4, III=6). A beach without a port berths 1. */
 export const SHIPS_PER_RANK = 2;
 export const SHIPS_CAP = WORKS_CAP * SHIPS_PER_RANK;
 /** Siege engines stored on a city. */
-export const SIEGE_CAP = 2;
-/** At most one of each engine marches with a host. */
-export const SIEGE_BRING = 1;
+export const SIEGE_CAP = 5;
+/** At most this many of each engine march with a host. */
+export const SIEGE_BRING = 5;
 /** Engines cost nothing — they take time once a neighbour is under siege. */
 export const SIEGE_COST: Record<SiegeKind, { gold: number; wood: number; stone: number; metal: number }> = {
   ram: { gold: 0, wood: 0, stone: 0, metal: 0 },
@@ -401,13 +429,13 @@ export const SIEGE_LABEL: Record<SiegeKind, string> = {
   ladder: "Ladders",
   tower: "Siege tower",
 };
-export const TOWER_CARGO = { levy: 20, knights: 5, beasts: 5 } as const;
+export const TOWER_CARGO = { levy: 20, bowmen: 10, knights: 5, beasts: 5 } as const;
 export const SCORPION_CAP = 2;
 export const SCORPION_TURNS = 2;
 export const SCORPION_COST = { gold: 3, wood: 2, stone: 0, metal: 2 };
 /** Silver wages per this many standing men; a host always costs at least 1. */
 export const LEVY_COMMISSION = 2;
-/** Silver wages per standing house beast. Hunt with them or the mint eats the court. */
+/** Silver wages per standing house beast. Hunt with them or the mint eats the empire. */
 export const BEAST_WAGE = 3;
 /** Flat gold on any capture, plus 1 per defending soldier. */
 export const CAPTURE_GOLD_BASE = 2;

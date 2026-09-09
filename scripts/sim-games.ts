@@ -50,7 +50,7 @@ interface Row {
 function winKindOf(s: GameState): WinKind {
   if (s.phase !== "gameover" || s.winner == null) return "unfinished";
   const line = s.log.at(-1) ?? "";
-  if (line.includes("two continents") || line.includes("six continents") || line.includes("five regions") || line.includes("five continents")) return "two-continents";
+  if (line.includes("two continents") || line.includes("six continents") || line.includes("seven regions") || line.includes("five regions") || line.includes("five continents")) return "two-continents";
   if (line.includes("stands alone")) return "last";
   if (line.includes("most provinces")) return "most-provinces";
   if (line.includes("most continents") || line.includes("most regions")) return "most-continents";

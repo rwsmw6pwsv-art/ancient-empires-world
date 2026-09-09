@@ -689,6 +689,91 @@ svg.touch-none:active {
   background: #2a261c;
 }
 
+.raid-alerts {
+  pointer-events: none;
+  position: absolute;
+  top: 2.6rem;
+  left: 50%;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: min(22rem, 86%);
+  transform: translateX(-50%);
+}
+
+.raid-alert {
+  margin: 0;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--color-surface) 92%, transparent);
+  color: var(--color-fg);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  text-align: center;
+  animation: raidAlertIn 0.28s ease-out;
+}
+
+.raid-alert[data-kind="gate"],
+.raid-alert[data-kind="wall"],
+.raid-alert[data-kind="tower"],
+.raid-alert[data-kind="keep"] {
+  color: var(--color-accent);
+  border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-border));
+}
+
+.raid-status {
+  pointer-events: none;
+  position: absolute;
+  top: 0.45rem;
+  left: 0.45rem;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  max-width: min(16rem, 58%);
+}
+
+.raid-status-chip {
+  margin: 0;
+  padding: 0.22rem 0.48rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: color-mix(in oklab, var(--color-surface) 82%, transparent);
+  color: var(--color-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+}
+
+.raid-status-chip.is-down {
+  color: var(--color-accent);
+  border-color: color-mix(in oklab, var(--color-accent) 40%, var(--color-border));
+  background: color-mix(in oklab, var(--color-surface) 88%, var(--color-accent) 8%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .raid-alert {
+    animation: none;
+  }
+}
+
+@keyframes raidAlertIn {
+  from {
+    opacity: 0;
+    transform: translateY(-0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .raid-canvas {
   display: block;
   width: 100%;
@@ -1166,7 +1251,579 @@ input[type="range"] {
 @media (prefers-reduced-motion: reduce) {
   .map-land,
   .reveal,
-  .job-bar-fill {
+  .job-bar-fill,
+  .load-fill {
     transition: none;
   }
+
+  .load-fill.is-wait {
+    width: 40%;
+    animation: none;
+  }
 }
+
+/* Shared crop: pin the dragon's snout/eye so home + every load screen frame the same head. */
+:root {
+  --dragon-head: 100% 16%;
+}
+
+.load-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0;
+  overflow: hidden;
+  padding: 1.5rem 1.5rem max(18vh, calc(2.5rem + env(safe-area-inset-bottom)));
+  background: var(--color-bg);
+  color: var(--color-fg);
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.load-art {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--dragon-head);
+  pointer-events: none;
+}
+
+/* Tall phones: zoom the right-hand head so it isn't a sliver of chest. */
+@media (max-aspect-ratio: 3/4) {
+  .load-art {
+    width: 220%;
+    height: 130%;
+    top: -6%;
+    right: 0;
+    object-position: var(--dragon-head);
+  }
+}
+
+@media (min-aspect-ratio: 1/1) {
+  .load-art {
+    width: 128%;
+    height: 128%;
+    top: -8%;
+    right: 0;
+    object-position: var(--dragon-head);
+  }
+}
+
+.load-veil {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-bg) 6%, transparent) 0%,
+    color-mix(in oklab, var(--color-bg) 10%, transparent) 38%,
+    color-mix(in oklab, var(--color-bg) 55%, transparent) 62%,
+    color-mix(in oklab, var(--color-bg) 92%, transparent) 100%
+  );
+}
+
+.load-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(22rem, 100%);
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  text-align: center;
+}
+
+.load-mark {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.load-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.45rem, 4.6vw, 2rem);
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+}
+
+.load-copy {
+  color: var(--color-muted);
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+}
+
+.load-track {
+  width: 100%;
+  height: 0.7rem;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-raised);
+}
+
+.load-fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-fg);
+  transition: width 0.2s;
+}
+
+.load-fill.is-wait {
+  width: 32%;
+  animation: 1.15s ease-in-out infinite loadSlide;
+}
+
+@keyframes loadSlide {
+  0% {
+    transform: translate(-140%);
+  }
+  to {
+    transform: translate(420%);
+  }
+}
+
+.title-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.title-hero-stage {
+  position: relative;
+  isolation: isolate;
+  height: min(58vw, 20rem);
+  min-height: 17rem;
+}
+
+.title-hero-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 88% 20%;
+  pointer-events: none;
+}
+
+.title-hero-veil {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-bg) 8%, transparent) 0%,
+    color-mix(in oklab, var(--color-bg) 18%, transparent) 42%,
+    color-mix(in oklab, var(--color-bg) 72%, transparent) 100%
+  );
+}
+
+.title-hero-lead {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  padding: 0.9rem 0.95rem 0.85rem;
+}
+
+.title-hero-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.75rem 0.8rem 0.85rem;
+  background: color-mix(in oklab, var(--color-raised) 88%, var(--color-bg));
+}
+
+.title-hero-select {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.title-hero-diffs,
+.title-hero-actions {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.title-hero-diffs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.title-hero-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.title-hero-house {
+  width: 100%;
+  min-height: 2.75rem;
+}
+
+.title-hero-diffs > button,
+.title-hero-actions > a,
+.title-hero-actions > button {
+  width: 100%;
+  min-height: 2.75rem;
+  white-space: nowrap;
+}
+
+.title-hero-begin {
+  grid-column: 1 / -1;
+}
+
+.empire-pick {
+  min-width: 0;
+}
+
+.raid-tools {
+  display: flex;
+  flex-flow: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.1rem;
+}
+
+.raid-field-tools {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.22rem;
+  padding: 0.28rem;
+  border: 1px solid color-mix(in oklab, var(--color-border) 80%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--color-surface) 78%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.raid-speed-row,
+.raid-zoom-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.22rem;
+}
+
+.raid-speed.is-picked {
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+  color: var(--color-fg);
+}
+
+.raid-tactics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+}
+
+.raid-orders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.raid-plan {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.28rem 0.7rem;
+  max-height: 28vh;
+  padding-right: 0.15rem;
+  overflow: auto;
+}
+
+.raid-plan > .raid-orders-kicker {
+  grid-column: 1 / -1;
+}
+
+.raid-plan-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.raid-plan-kind {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.raid-plan .raid-tactic {
+  min-height: 1.85rem;
+  padding: 0.16rem 0.42rem;
+  font-size: 10px;
+}
+
+.raid-orders-kicker {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.raid-chip.is-hold {
+  opacity: 0.72;
+}
+
+.raid-tactic {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  min-height: 2.2rem;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-raised);
+  color: var(--color-fg);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.raid-tactic.is-picked {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.raid-brief {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  left: 0.55rem;
+  z-index: 6;
+  max-width: 22rem;
+  padding: 0.7rem 0.8rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--color-surface) 94%, transparent);
+  color: var(--color-fg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 18px 44px rgb(0 0 0 / 0.42);
+}
+
+.raid-brief-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.raid-brief-head p {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.raid-brief-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-raised);
+  color: var(--color-fg);
+}
+
+.raid-brief-works {
+  margin: 0.15rem 0 0.45rem;
+  color: var(--color-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.raid-brief ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  color: var(--color-fg);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.raid-brief li {
+  margin-left: 1rem;
+  list-style: outside;
+  color: var(--color-muted);
+}
+
+.raid-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  background: var(--color-raised);
+  color: var(--color-fg);
+}
+
+.raid-help.is-picked {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.raid-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.55rem 0.15rem 0.15rem;
+}
+
+.raid-summary-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.raid-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+}
+
+.raid-tally {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-raised);
+}
+
+.raid-tally-title {
+  padding: 0.45rem 0.65rem 0.2rem;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+@media (height <= 740px) {
+  .raid-plan {
+    max-height: 24vh;
+  }
+}
+
+@media (width <= 640px) {
+  .raid-plan {
+    grid-template-columns: 1fr;
+    max-height: 30vh;
+  }
+}
+
+@media (width >= 640px) {
+  .title-hero {
+    min-height: 13.5rem;
+  }
+
+  .title-hero-stage {
+    position: absolute;
+    inset: 0;
+    height: auto;
+    min-height: 0;
+  }
+
+  .title-hero-art {
+    object-position: 86% 18%;
+  }
+
+  .title-hero-veil {
+    background:
+      linear-gradient(
+        90deg,
+        color-mix(in oklab, var(--color-bg) 86%, transparent) 0%,
+        color-mix(in oklab, var(--color-bg) 28%, transparent) 42%,
+        color-mix(in oklab, var(--color-bg) 8%, transparent) 68%,
+        color-mix(in oklab, var(--color-bg) 42%, transparent) 100%
+      ),
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--color-bg) 18%, transparent) 0%,
+        transparent 52%,
+        color-mix(in oklab, var(--color-bg) 38%, transparent) 100%
+      );
+  }
+
+  .title-hero-lead {
+    right: auto;
+    max-width: 46%;
+    padding: 0.95rem 1.1rem 1rem;
+  }
+
+  .title-hero-picks {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: 1;
+    max-width: 26rem;
+    align-items: flex-end;
+    padding: 0.85rem 1.05rem 0.95rem;
+    background: transparent;
+  }
+
+  .title-hero-select {
+    flex-flow: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    width: auto;
+  }
+
+  .title-hero-diffs,
+  .title-hero-actions {
+    display: flex;
+    width: auto;
+    justify-content: flex-end;
+    gap: 0.35rem;
+  }
+
+  .title-hero-house {
+    flex: 0 auto;
+    width: auto;
+    min-height: 0;
+  }
+
+  .title-hero-diffs > button,
+  .title-hero-actions > a,
+  .title-hero-actions > button {
+    width: auto;
+    min-height: 2.25rem;
+  }
+
+  .title-hero-begin {
+    flex: none;
+    grid-column: auto;
+    min-width: 8rem;
+  }
+
+  .raid-summary-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+

@@ -7,6 +7,7 @@ import { CONTINENT_NAMES, type Difficulty, type EmpireId } from "@/lib/game/type
 import { hasSave } from "@/lib/game/save";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ScreenGate } from "./LoadingScreen";
 
 const HowTo = lazy(() => import("./HowTo").then((m) => ({ default: m.HowTo })));
 
@@ -43,7 +44,17 @@ function paintMeridians(canvas: HTMLCanvasElement) {
   ctx.stroke();
 }
 
+const pickId = (id: EmpireId) => `pick-${id}`;
+
 export function TitleScreen() {
+  return (
+    <ScreenGate pack="title" label="Loading the game">
+      <TitleReady />
+    </ScreenGate>
+  );
+}
+
+function TitleReady() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [empire, setEmpire] = useState<EmpireId>("asgard");
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
@@ -75,44 +86,114 @@ export function TitleScreen() {
         className="pointer-events-none absolute inset-0 h-full w-full"
         aria-hidden="true"
       />
-      <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 pb-28 sm:px-8 sm:py-12">
-        <header className="reveal flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
-          <div className="max-w-xl">
-            <p className="text-[10px] tracking-[0.22em] text-muted uppercase">The age of dragons</p>
-            <h1 className="font-display text-4xl leading-tight tracking-tight sm:text-6xl">Ancient Empires</h1>
-            <div className="mt-4 max-w-xl space-y-3 text-sm leading-relaxed text-muted sm:text-base">
-              <p>Twelve courts. Thirteen regions. Dragons wake when a capital falls or a region locks.</p>
-              <p>Raise them. Spend them. Five regions write the age — or the last throne standing at turn 200.</p>
+      <div className="relative z-10 mx-auto flex max-w-6xl flex-col gap-5 px-4 py-4 sm:gap-8 sm:px-8 sm:py-8">
+        <header className="title-hero reveal">
+          <div className="title-hero-stage">
+            <img
+              src="/map/title-dragon.jpg"
+              alt=""
+              width={1200}
+              height={800}
+              decoding="async"
+              className="title-hero-art"
+            />
+            <div className="title-hero-veil" aria-hidden="true" />
+            <div className="title-hero-lead">
+              <p className="text-[10px] tracking-[0.22em] text-muted uppercase">The age of dragons</p>
+              <h1 className="font-display text-4xl leading-tight tracking-tight sm:text-5xl lg:text-6xl">
+                Ancient Empires
+              </h1>
             </div>
           </div>
-          <img
-            src="/map/title-dragon.jpg"
-            alt=""
-            width={1200}
-            height={800}
-            decoding="async"
-            className="mx-auto h-44 w-auto object-contain sm:mx-0 sm:h-56 lg:h-72"
-          />
+          <div className="title-hero-picks">
+            <div className="title-hero-select">
+              <button
+                type="button"
+                className={cn(
+                  "empire-" + empire,
+                  "title-hero-house",
+                  "flex items-center gap-2 rounded-[var(--radius-sm)] border border-accent bg-surface/90 px-2.5 py-1.5 text-left ring-2 ring-accent sm:gap-3 sm:px-3 sm:py-2",
+                )}
+                onClick={() =>
+                  document.getElementById(pickId(empire))?.scrollIntoView({ behavior: "smooth", block: "center" })
+                }
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center sm:h-12 sm:w-12">
+                  <img
+                    src={BEAST_SRC[chosenBeast.id]}
+                    alt=""
+                    width={96}
+                    height={96}
+                    decoding="async"
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </span>
+                <span className="min-w-0">
+                  <span className="block font-display text-sm sm:text-base">{chosen.name}</span>
+                  <span className="block text-xs text-muted">{chosenRegion}</span>
+                  <span className="house-swatch mt-0.5 block h-1.5 w-8 rounded-full sm:mt-1" />
+                </span>
+              </button>
+              <div className="title-hero-diffs" role="group" aria-label="Difficulty">
+                {DIFFICULTIES.map((d) => (
+                  <Button
+                    key={d.id}
+                    type="button"
+                    size="sm"
+                    variant={difficulty === d.id ? "primary" : "secondary"}
+                    onClick={() => setDifficulty(d.id)}
+                  >
+                    {d.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="title-hero-actions">
+              <Link to={start.to} params={start.params} className={cn(buttonVariants({ size: "sm" }), "title-hero-begin")}>
+                Begin the age
+              </Link>
+              <Button size="sm" variant="ghost" onClick={() => setHelp(true)}>
+                How to play
+              </Button>
+              {canResume ? (
+                <Link
+                  to="/play/$empire/$difficulty/$opening"
+                  params={{ empire: "resume", difficulty: "normal", opening: "capital" }}
+                  className={buttonVariants({ size: "sm", variant: "secondary" })}
+                >
+                  Resume
+                </Link>
+              ) : null}
+              <Link to="/drill" className={buttonVariants({ size: "sm", variant: "secondary" })}>
+                Train battles
+              </Link>
+            </div>
+          </div>
         </header>
 
         <section>
-          <p className="mb-3 text-xs tracking-[0.18em] text-muted uppercase">Choose an empire</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          <p className="mb-2 text-xs tracking-[0.18em] text-muted uppercase">Choose an empire</p>
+          <div className="grid grid-cols-3 gap-1 sm:grid-cols-4 sm:gap-2 lg:grid-cols-4">
             {EMPIRE_LIST.map((e) => {
               const beast = beastOf(e.id);
               const region = CONTINENT_NAMES[e.region];
               return (
                 <button
                   key={e.id}
+                  id={pickId(e.id)}
                   type="button"
+                  aria-pressed={empire === e.id}
+                  onPointerDown={() => setEmpire(e.id)}
                   onClick={() => setEmpire(e.id)}
                   className={cn(
                     "empire-" + e.id,
-                    "relative z-10 rounded-[var(--radius-md)] border border-border bg-raised/80 p-3 text-center transition-colors",
-                    empire === e.id && "border-fg bg-surface",
+                    "empire-pick relative z-10 min-h-11 cursor-pointer touch-manipulation rounded-[var(--radius-sm)] border border-border bg-raised/80 p-1 text-center transition-colors sm:rounded-[var(--radius-md)] sm:p-3",
+                    empire === e.id
+                      ? "border-accent bg-surface ring-2 ring-accent"
+                      : "hover:border-fg/60",
                   )}
                 >
-                  <span className="mx-auto mb-1 flex h-20 w-full items-center justify-center sm:h-24">
+                  <span className="mx-auto flex h-8 w-full items-center justify-center sm:mb-1 sm:h-20 lg:h-24">
                     <img
                       src={BEAST_SRC[beast.id]}
                       alt=""
@@ -122,66 +203,14 @@ export function TitleScreen() {
                       className="max-h-full max-w-full object-contain"
                     />
                   </span>
-                  <span className="mt-1 block font-display text-sm">{e.name}</span>
-                  <span className="mt-0.5 block text-xs text-muted">{region}</span>
-                  <span className="house-swatch mx-auto mt-2 block h-1.5 w-8 rounded-full" />
+                  <span className="mt-0.5 block font-display text-xs leading-tight sm:mt-1 sm:truncate sm:text-sm">{e.name}</span>
+                  <span className="mt-0.5 hidden truncate text-xs leading-tight text-muted sm:block">{region}</span>
+                  <span className="house-swatch mx-auto mt-1 block h-0.5 w-4 rounded-full sm:mt-2 sm:h-1.5 sm:w-8" />
                 </button>
               );
             })}
           </div>
         </section>
-
-        <section className="panel flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-          <span className="hidden h-24 w-24 shrink-0 items-center justify-center sm:flex">
-            <img
-              src={BEAST_SRC[chosenBeast.id]}
-              alt=""
-              width={96}
-              height={96}
-              decoding="async"
-              className="max-h-full max-w-full object-contain"
-            />
-          </span>
-          <div className="flex-1">
-            <p className="font-display text-lg text-fg">{chosen.name}</p>
-            <p className="text-sm text-muted">
-              {chosenBeast.name} of {chosenRegion}. A dragon wakes on a taken capital, and again when you lock a region.
-            </p>
-            <p className="mt-3 text-xs tracking-[0.18em] text-muted uppercase">Difficulty</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {DIFFICULTIES.map((d) => (
-                <Button
-                  key={d.id}
-                  type="button"
-                  size="sm"
-                  variant={difficulty === d.id ? "primary" : "secondary"}
-                  onClick={() => setDifficulty(d.id)}
-                >
-                  {d.label}
-                </Button>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-muted">{DIFFICULTIES.find((d) => d.id === difficulty)?.blurb}</p>
-          </div>
-        </section>
-
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Link to={start.to} params={start.params} className={cn(buttonVariants({ size: "lg" }), "sm:min-w-52")}>
-            Begin the age
-          </Link>
-          {canResume ? (
-            <Link
-              to="/play/$empire/$difficulty/$opening"
-              params={{ empire: "resume", difficulty: "normal", opening: "capital" }}
-              className={buttonVariants({ size: "lg", variant: "secondary" })}
-            >
-              Resume
-            </Link>
-          ) : null}
-          <Button size="lg" variant="ghost" onClick={() => setHelp(true)}>
-            How to play
-          </Button>
-        </div>
       </div>
       {help ? (
         <Suspense fallback={null}>

@@ -30,7 +30,6 @@ import {
   HOUSES,
   PLAYER_COUNT,
   SAVE_VERSION,
-  TURN_LIMIT,
   UNIT_ATK,
   UNIT_COST,
   UNIT_DEF,
@@ -78,6 +77,18 @@ import {
   TERRITORY_BY_ID,
 } from "./world";
 import { beastOf, landscapeOf, type BeastDef } from "./landscape";
+import {
+  DEFENSE_CAP,
+  DEFENSE_COST,
+  DEFENSE_LABEL,
+  DEFENSE_TURNS,
+  asJobKind,
+  defenseRank,
+  isDefenseKind,
+  setDefenseRank,
+  syncFortFromDefense,
+  type DefenseKind,
+} from "./defense";
 
 export function isBarbarian(owner: TerritoryState["owner"]): owner is "barbarian" {
   return owner === "barbarian";
@@ -178,6 +189,10 @@ export function setFort(t: TerritoryState, rank: number) {
   t.fort = n;
   t.castle = n >= 1;
   t.castleRank = n;
+  if (n >= 1) t.wallRank = Math.max(t.wallRank ?? 0, 1);
+  if (n >= 2) t.wallRank = Math.max(t.wallRank ?? 0, 2);
+  if (n >= 3) t.keepRank = Math.max(t.keepRank ?? 0, 1);
+  if (n >= 4) t.keepRank = Math.max(t.keepRank ?? 0, 2);
 }
 
 export function hasKeep(t: TerritoryState): boolean {
@@ -208,11 +223,15 @@ export function siegeStockOf(t: TerritoryState): SiegeStock {
 
 export function siegeBringOf(t: TerritoryState): SiegeStock {
   return {
-    rams: Math.min(1, t.rams ?? 0),
-    catapults: Math.min(1, t.catapults ?? 0),
-    ladders: Math.min(1, t.ladders ?? 0),
-    towers: Math.min(1, t.towers ?? 0),
+    rams: Math.min(SIEGE_CAP, t.rams ?? 0),
+    catapults: Math.min(SIEGE_CAP, t.catapults ?? 0),
+    ladders: Math.min(SIEGE_CAP, t.ladders ?? 0),
+    towers: Math.min(SIEGE_CAP, t.towers ?? 0),
   };
+}
+
+export function siegeTurnsFor(t: TerritoryState, kind: SiegeKind, queued = 0): number {
+  return SIEGE_TURNS[kind] * (siegeCount(t, kind) + queued + 1);
 }
 
 export function siegeTargetOf(state: GameState, fromId: string): string | null {
@@ -262,7 +281,7 @@ export function beginSiege(state: GameState, fromId: string, toId: string): Game
   to.besiegedFrom = fromId;
   const place = TERRITORY_BY_ID[toId]!.name;
   const camp = TERRITORY_BY_ID[fromId]!.name;
-  log(next, `${empireOf(playerOf(next, player).empire).name} lays siege to ${place} from ${camp}. Rams and ladders raise in a watch; towers in three; catapults in five.`);
+  log(next, `${empireOf(playerOf(next, player).empire).name} lays siege to ${place} from ${camp}. Rams and ladders raise in a watch, towers in three, catapults in five — each extra engine takes longer.`);
   return next;
 }
 
@@ -578,11 +597,15 @@ function holdsContinent(state: GameState, player: PlayerId, continent: Continent
   return lands.length > 0 && lands.every((d) => state.territories[d.id]!.owner === player);
 }
 
-function placeDragon(state: GameState, player: PlayerId, preferId: string, fallbackId: string): string | null {
+function placeDragon(state: GameState, player: PlayerId, preferId: string, fallbackId: string, tier: 2 | 3): string | null {
   const tryPut = (id: string) => {
     const t = state.territories[id];
     if (!t || t.owner !== player || t.dragons >= DRAGON_CAP) return false;
     t.dragons += 1;
+    t.dragonTier = Math.max(t.dragonTier ?? 0, tier);
+    const p = playerOf(state, player);
+    if (tier >= 3) p.rareDragons = (p.rareDragons ?? 0) + 1;
+    else p.specialDragons = (p.specialDragons ?? 0) + 1;
     return true;
   };
   if (tryPut(preferId)) return preferId;
@@ -629,6 +652,14 @@ function grantTerritory(
   if (t.market) t.marketRank = Math.max(t.marketRank ?? 0, 1);
   if (t.farm) t.farmRank = Math.max(t.farmRank ?? 0, 1);
   if ((t.population ?? 0) < 1) t.population = 1;
+  t.wallRank = t.wallRank ?? (t.fort >= 2 ? 2 : t.fort >= 1 ? 1 : 0);
+  t.outerWallRank = t.outerWallRank ?? 0;
+  t.keepRank = t.keepRank ?? (t.fort >= 4 ? 2 : t.fort >= 3 ? 1 : 0);
+  t.towerRank = t.towerRank ?? 0;
+  t.moatRank = t.moatRank ?? 0;
+  t.scorpionRank = t.scorpionRank ?? Math.min(5, t.scorpions ?? 0);
+  t.dragonTier = t.dragonTier ?? 0;
+  syncFortFromDefense(t);
 }
 
 function seedBarbarians(state: GameState, rng: () => number) {
@@ -686,6 +717,8 @@ export function createNewGame(opts: {
     alive: true,
     human: i === 0,
     cards: ["levy", "forge"] as CardId[],
+    specialDragons: 0,
+    rareDragons: 0,
   }));
 
   const territories: Record<string, TerritoryState> = {};
@@ -715,7 +748,14 @@ export function createNewGame(opts: {
       ladders: 0,
       towers: 0,
       scorpions: 0,
+      wallRank: 0,
+      outerWallRank: 0,
+      keepRank: 0,
+      towerRank: 0,
+      moatRank: 0,
+      scorpionRank: 0,
       fort: 0,
+      dragonTier: 0,
       breach: 0,
       besiegedFrom: null,
       pressure: 0,
@@ -736,7 +776,7 @@ export function createNewGame(opts: {
     marches: [],
     arrivals: [],
     events: [],
-    log: [`The twelve empires take the field. Only the capitals are yours.`],
+    log: [`The thirteen empires take the field. Only the capitals are yours.`],
     marchFrom: null,
     winner: null,
     nextJobId: 1,
@@ -754,6 +794,12 @@ export function createNewGame(opts: {
       castle: true,
       castleRank: 2,
       fort: 2,
+      wallRank: 2,
+      outerWallRank: 0,
+      keepRank: 0,
+      towerRank: 1,
+      moatRank: 0,
+      scorpionRank: 0,
       road: true,
       population: 4,
       ships: def.startShip ? 1 : 0,
@@ -1047,13 +1093,12 @@ function finishAssault(
         log(next, `${attackerName} takes ${place}.`);
       }
     }
-    if (!meta.tribal && meta.wasCapitol) {
-      const nest = placeDragon(next, meta.player, meta.toId, meta.fromId);
-      if (nest) log(next, `A dragon wakes in ${TERRITORY_BY_ID[nest]!.name} over the fallen capital.`);
-    }
     if (!meta.tribal && continentsHeld(next, meta.player).length > meta.continentsBefore) {
-      const nest = placeDragon(next, meta.player, meta.toId, meta.fromId);
-      if (nest) log(next, `${CONTINENT_NAMES[meta.destCont]} yields a dragon in ${TERRITORY_BY_ID[nest]!.name}.`);
+      const nest = placeDragon(next, meta.player, meta.toId, meta.fromId, 3);
+      if (nest) log(next, `A rare dragon wakes in ${TERRITORY_BY_ID[nest]!.name} over ${CONTINENT_NAMES[meta.destCont]}.`);
+    } else if (!meta.tribal && meta.wasCapitol) {
+      const nest = placeDragon(next, meta.player, meta.toId, meta.fromId, 2);
+      if (nest) log(next, `A special dragon wakes in ${TERRITORY_BY_ID[nest]!.name} over the fallen capital.`);
     }
   } else {
     to.levy = persistFieldLevy(meta.fieldLevy, meta.watch, dLevy);
@@ -1242,7 +1287,6 @@ export function trainUnit(state: GameState, territoryId: string, kind: UnitKind)
   const t = terr(next, territoryId);
   if (t.owner !== p.id) return state;
   if (kind === "beast" && !Object.values(CAPITOL).includes(territoryId)) return state;
-  if (kind === "dragon" && t.dragons >= DRAGON_CAP) return state;
   if (kind === "dragon" && hasKindJob(next, territoryId, "dragon")) return state;
   const beast = beastOf(p.empire);
   const cost = kind === "beast" ? { gold: beast.cost, wood: 0, stone: 0, metal: 0 } : UNIT_COST[kind];
@@ -1295,7 +1339,7 @@ function improveCost(rank: number) {
 
 export function worksCost(p: PlayerState, kind: JobKind, t?: TerritoryState) {
   if (isSiegeKind(kind)) return SIEGE_COST[kind];
-  if (kind === "scorpion") return SCORPION_COST;
+  if (isDefenseKind(kind)) return { ...DEFENSE_COST[kind] };
   if (t && (kind === "port" || kind === "mine" || kind === "market" || kind === "farm")) {
     const rank = worksRank(t, kind);
     if (rank > 0) return { ...improveCost(rank), metal: 0 };
@@ -1407,13 +1451,13 @@ function startImproveable(
 }
 
 export function raiseWorks(state: GameState, territoryId: string, kind: JobKind): GameState {
+  if (isDefenseKind(kind)) return buildDefense(state, territoryId, kind);
   if (kind === "castle") return buildCastle(state, territoryId);
   if (kind === "mine") return buildMine(state, territoryId);
   if (kind === "port") return buildPort(state, territoryId);
   if (kind === "market") return buildMarket(state, territoryId);
   if (kind === "road") return buildRoad(state, territoryId);
   if (kind === "farm") return buildFarm(state, territoryId);
-  if (kind === "scorpion") return buildScorpion(state, territoryId);
   if (isSiegeKind(kind)) return buildSiege(state, territoryId, kind);
   return buildShip(state, territoryId);
 }
@@ -1534,24 +1578,34 @@ export function buildSiege(state: GameState, territoryId: string, kind: SiegeKin
   const queued = jobsOfKind(next, territoryId, kind).length;
   if (t.owner !== p.id || siegeCount(t, kind) + queued >= SIEGE_CAP) return state;
   if (!canRaiseSiege(next, territoryId)) return state;
-  enqueue(next, kind, territoryId, SIEGE_TURNS[kind]);
+  const waitN = siegeTurnsFor(t, kind, queued);
+  enqueue(next, kind, territoryId, waitN);
   const place = TERRITORY_BY_ID[territoryId]!.name;
   const mark = siegeTargetOf(next, territoryId);
   const at = mark ? ` against ${TERRITORY_BY_ID[mark]!.name}` : "";
   const verb = kind === "ladder" ? "cut" : kind === "tower" ? "raises" : kind === "ram" ? "timbers" : "frames";
-  const wait = SIEGE_TURNS[kind] === 1 ? "one watch" : `${SIEGE_TURNS[kind]} watches`;
+  const wait = waitN === 1 ? "one watch" : `${waitN} watches`;
   log(next, `${empireOf(p.empire).name} ${verb} ${SIEGE_LABEL[kind].toLowerCase()} in ${place}${at} — ${wait}, no purse.`);
   return next;
 }
 
 export function buildScorpion(state: GameState, territoryId: string): GameState {
+  return buildDefense(state, territoryId, "scorpion");
+}
+
+export function buildDefense(state: GameState, territoryId: string, kind: DefenseKind): GameState {
   const next = clone(state);
   const p = current(next);
   const t = terr(next, territoryId);
-  if (t.owner !== p.id || hasKindJob(next, territoryId, "scorpion") || (t.scorpions ?? 0) >= SCORPION_CAP) return state;
-  if (!pay(p, SCORPION_COST.gold, SCORPION_COST.wood, SCORPION_COST.stone, SCORPION_COST.metal)) return state;
-  enqueue(next, "scorpion", territoryId, SCORPION_TURNS, SCORPION_COST);
-  log(next, `${empireOf(p.empire).name} raises a scorpion on the walls of ${TERRITORY_BY_ID[territoryId]!.name}.`);
+  const job = asJobKind(kind);
+  if (t.owner !== p.id || hasKindJob(next, territoryId, job)) return state;
+  const rank = defenseRank(t, kind);
+  if (rank >= DEFENSE_CAP[kind]) return state;
+  const cost = DEFENSE_COST[kind];
+  if (!pay(p, cost.gold, cost.wood, cost.stone, cost.metal)) return state;
+  enqueue(next, job, territoryId, DEFENSE_TURNS[kind], cost);
+  const name = TERRITORY_BY_ID[territoryId]!.name;
+  log(next, `${empireOf(p.empire).name} raises ${DEFENSE_LABEL[kind].toLowerCase()} in ${name}.`);
   return next;
 }
 
@@ -1608,6 +1662,7 @@ export function advanceJobs(state: GameState): GameState {
       if (job.kind === "bowman") t.bowmen = (t.bowmen ?? 0) + 1;
       if (job.kind === "knight") t.knights += 1;
       if (job.kind === "dragon") t.dragons = Math.min(DRAGON_CAP, t.dragons + 1);
+      if (job.kind === "dragon") t.dragonTier = Math.max(t.dragonTier ?? 0, 1);
       if (job.kind === "beast") t.beasts = (t.beasts ?? 0) + 1;
       const beast = beastOf(playerOf(next, job.player).empire);
       const label = job.kind === "beast" ? beast.name : UNIT_LABEL[job.kind];
@@ -1656,17 +1711,19 @@ export function advanceJobs(state: GameState): GameState {
     }
     if (job.kind === "ladder") t.ladders = Math.min(SIEGE_CAP, (t.ladders ?? 0) + 1);
     if (job.kind === "tower") t.towers = Math.min(SIEGE_CAP, (t.towers ?? 0) + 1);
-    if (job.kind === "scorpion") t.scorpions = Math.min(SCORPION_CAP, (t.scorpions ?? 0) + 1);
+    if (isDefenseKind(job.kind)) {
+      setDefenseRank(t, job.kind, defenseRank(t, job.kind) + 1);
+    }
     const label =
       job.kind === "castle"
         ? FORT_LABEL[fortOf(t)]!.toLowerCase()
-        : job.kind === "tower"
+        : isDefenseKind(job.kind)
+          ? DEFENSE_LABEL[job.kind].toLowerCase()
+          : job.kind === "tower"
           ? "siege tower"
           : job.kind === "ram"
             ? "ram"
-            : job.kind === "scorpion"
-              ? "scorpion"
-              : job.kind;
+            : job.kind;
     const rank =
       job.kind === "port" || job.kind === "mine" || job.kind === "castle" || job.kind === "market" || job.kind === "farm"
         ? worksRank(t, job.kind)
@@ -1728,10 +1785,10 @@ export function issueMarch(
   from.dragons -= force.dragons;
   from.beasts = (from.beasts ?? 0) - sendBeasts;
 
-  const rams = Math.min(1, siege?.rams ?? 0, from.rams ?? 0);
-  const catapults = Math.min(1, siege?.catapults ?? 0, from.catapults ?? 0);
-  const ladders = Math.min(1, siege?.ladders ?? 0, from.ladders ?? 0);
-  const towers = Math.min(1, siege?.towers ?? 0, from.towers ?? 0);
+  const rams = Math.min(SIEGE_CAP, siege?.rams ?? 0, from.rams ?? 0);
+  const catapults = Math.min(SIEGE_CAP, siege?.catapults ?? 0, from.catapults ?? 0);
+  const ladders = Math.min(SIEGE_CAP, siege?.ladders ?? 0, from.ladders ?? 0);
+  const towers = Math.min(SIEGE_CAP, siege?.towers ?? 0, from.towers ?? 0);
   from.rams = (from.rams ?? 0) - rams;
   from.catapults = (from.catapults ?? 0) - catapults;
   from.ladders = (from.ladders ?? 0) - ladders;
@@ -2105,38 +2162,8 @@ export function checkVictory(state: GameState): GameState {
     if (continentsHeld(next, p.id).length >= WIN_CONTINENTS) {
       next.phase = "gameover";
       next.winner = p.id;
-      log(next, `${empireOf(p.empire).name} holds five regions.`);
+      log(next, `${empireOf(p.empire).name} holds ${WIN_CONTINENTS} regions.`);
       return next;
-    }
-  }
-  if (next.clock.turn >= TURN_LIMIT) {
-    const ranked = rankPlayers(next);
-    next.phase = "gameover";
-    if (!ranked.length) {
-      next.winner = null;
-      log(next, "The age closes. No court remains.");
-      return next;
-    }
-    const best = ranked[0]!;
-    const second = ranked[1];
-    const tie = Boolean(
-      second && second.continents === best.continents && second.lands === best.lands,
-    );
-    if (tie) {
-      next.winner = null;
-      log(next, "The age closes in a dead heat.");
-      return next;
-    }
-    next.winner = best.id;
-    if (second && second.continents === best.continents) {
-      log(
-        next,
-        `The age closes. ${empireOf(best.empire).name} holds the most provinces among the leading regions.`,
-      );
-    } else if (best.continents > 0) {
-      log(next, `The age closes. ${empireOf(best.empire).name} holds the most regions.`);
-    } else {
-      log(next, `The age closes. ${empireOf(best.empire).name} holds the most provinces.`);
     }
   }
   return next;

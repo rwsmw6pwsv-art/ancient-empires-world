@@ -7,7 +7,6 @@ import {
   buildRoad,
   buildFarm,
   buildSiege,
-  buildScorpion,
   beginSiege,
   canRaiseSiege,
   hasKindJob,
@@ -29,6 +28,7 @@ import {
   siegeBringOf,
   siegeTargetOf,
   fortOf,
+  raiseWorks,
 } from "./engine";
 import { openRaid, type RaidState } from "./raid";
 import type { AiAction, Difficulty, GameState, JobKind, PlayerId, TerritoryState } from "./types";
@@ -36,6 +36,7 @@ import { UNIT_COST, BEAST_WAGE, FORT_CAP, isSiegeKind } from "./types";
 import { TERRITORY_BY_ID, continentTerritories, landNeighbors } from "./world";
 import { empireOf } from "./empires";
 import { beastOf } from "./landscape";
+import { DEFENSE_CAP, DEFENSE_KINDS, defenseRank, isDefenseKind } from "./defense";
 
 function owned(state: GameState, player: PlayerId): TerritoryState[] {
   return ownedIds(state, player).map((id) => state.territories[id]!);
@@ -446,7 +447,6 @@ export function nextAiAction(state: GameState): AiAction {
       const meta = TERRITORY_BY_ID[t.id]!;
       const mine = worksCost(p, "mine");
       const market = worksCost(p, "market");
-      const castle = worksCost(p, "castle");
       const road = worksCost(p, "road");
       if (!meta.coastal && !t.mine && !hasKindJob(state, t.id, "mine") && p.gold >= mine.gold && p.stone >= mine.stone) {
         return { type: "build", territoryId: t.id, kind: "mine" };
@@ -457,8 +457,14 @@ export function nextAiAction(state: GameState): AiAction {
       if (!t.market && !hasKindJob(state, t.id, "market") && p.gold >= market.gold && p.wood >= market.wood) {
         return { type: "build", territoryId: t.id, kind: "market" };
       }
-      if (spec.cities && fortOf(t) < FORT_CAP && standing(t) >= 4 && !hasKindJob(state, t.id, "castle") && p.gold >= castle.gold && p.stone >= castle.stone) {
-        return { type: "build", territoryId: t.id, kind: "castle" };
+      if (spec.cities && standing(t) >= 4) {
+        for (const kind of DEFENSE_KINDS) {
+          if (defenseRank(t, kind) >= DEFENSE_CAP[kind] || hasKindJob(state, t.id, kind)) continue;
+          const cost = worksCost(p, kind, t);
+          if (p.gold >= cost.gold && p.wood >= (cost.wood ?? 0) && p.stone >= (cost.stone ?? 0) && p.metal >= (cost.metal ?? 0)) {
+            return { type: "build", territoryId: t.id, kind };
+          }
+        }
       }
     }
   }
@@ -473,11 +479,11 @@ export function applyAiAction(state: GameState, action: AiAction): GameState {
     if (kind === "port") return buildPort(state, action.territoryId);
     if (kind === "mine") return buildMine(state, action.territoryId);
     if (kind === "castle") return buildCastle(state, action.territoryId);
+    if (isDefenseKind(kind)) return raiseWorks(state, action.territoryId, kind);
     if (kind === "market") return buildMarket(state, action.territoryId);
     if (kind === "road") return buildRoad(state, action.territoryId);
     if (kind === "farm") return buildFarm(state, action.territoryId);
     if (isSiegeKind(kind)) return buildSiege(state, action.territoryId, kind);
-    if (kind === "scorpion") return buildScorpion(state, action.territoryId);
     return buildShip(state, action.territoryId);
   }
   if (action.type === "siege") return beginSiege(state, action.from, action.to);
@@ -494,7 +500,7 @@ export function applyAiAction(state: GameState, action: AiAction): GameState {
   return endTurn(state);
 }
 
-/** Play every rival court until the human's watch returns. */
+/** Play every rival empire until the human's watch returns. */
 export function playAiTurns(state: GameState, maxSteps = 800): GameState {
   return playAiTurnsUntilBattle(state, maxSteps).state;
 }

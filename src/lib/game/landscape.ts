@@ -45,7 +45,8 @@ export type FaunaId =
   | "hippo"
   | "mastodon"
   | "sabertooth"
-  | "mammoth";
+  | "mammoth"
+  | "giant";
 
 export type WonderId =
   | "pyramids"
@@ -130,6 +131,7 @@ export const FAUNA_LABEL: Record<FaunaId, string> = {
   mastodon: "mastodons",
   sabertooth: "sabertooths",
   mammoth: "mammoths",
+  giant: "giants",
 };
 
 export const WONDER_LABEL: Record<WonderId, string> = {
@@ -140,7 +142,7 @@ export const WONDER_LABEL: Record<WonderId, string> = {
   stupa: "The Monsoon Stupa",
   eldorado: "The Gilded City",
   meadhall: "The Dawn Hall",
-  pagoda: "The Eastern Court",
+  pagoda: "The Eastern Empire",
   lighthouse: "The Cape Light",
   megalith: "The Southern Stones",
   reefshrine: "The Coral Shrine",
@@ -172,12 +174,39 @@ export const TERRAIN_TEXTURE: Record<TerrainId, string> = {
   mediterranean: "/map/terrain/grass.jpg",
 };
 
+export const WORLD_SRC = "/map/world-v130.webp";
+
 export const BATTLE_UNIT_SRC: Record<"levy" | "bowman" | "knight" | "dragon", string> = {
   levy: "/map/battle/levy.jpg",
   bowman: "/map/battle/bowman.jpg",
   knight: "/map/battle/knight.jpg",
   dragon: "/map/battle/dragon.jpg",
 };
+
+export const UNIT_SHEET_SRC: Record<"levy" | "bowman" | "knight" | "dragon" | "beast" | "ram" | "catapult", string> = {
+  levy: "/map/battle/units/levy.png?v=4",
+  bowman: "/map/battle/units/bowman.png?v=4",
+  knight: "/map/battle/units/knight.png?v=4",
+  dragon: "/map/battle/units/dragon.png?v=4",
+  beast: "/map/battle/units/beast.png?v=4",
+  ram: "/map/battle/units/ram.png?v=4",
+  catapult: "/map/battle/units/catapult.png?v=4",
+};
+
+export const CITY_ART_SRC: Record<"camp" | "wood" | "stone" | "high" | "outer" | "moat1" | "moat2" | "ring", string> = {
+  camp: "/map/battle/cities/camp.png?v=5",
+  wood: "/map/battle/cities/wood.png?v=5",
+  stone: "/map/battle/cities/stone.png?v=5",
+  high: "/map/battle/cities/high.png?v=5",
+  outer: "/map/battle/cities/outer.png?v=5",
+  moat1: "/map/battle/cities/moat1.png?v=5",
+  moat2: "/map/battle/cities/moat2.png?v=5",
+  ring: "/map/battle/cities/ring.png?v=5",
+};
+
+export const SCORPION_ART_SRC = "/map/battle/units/scorpion.png?v=4";
+export const TOWER_WOOD_SRC = "/map/battle/units/tower-wood.png?v=4";
+export const TOWER_STONE_SRC = "/map/battle/units/tower-stone.png?v=4";
 
 export const BATTLE_SLASH_SRC = "/map/battle/slash.jpg";
 
@@ -240,6 +269,7 @@ export const CAPITAL_SRC: Record<EmpireId, string> = {
   asgard: "/map/props/capitals/asgard.svg",
   tartaria: "/map/props/capitals/tartaria.svg",
   egypt: "/map/props/capitals/egypt.svg",
+  sumer: "/map/props/capitals/sumer.svg",
   siberia: "/map/props/capitals/siberia.svg",
   cape: "/map/props/capitals/cape.svg",
   gondwana: "/map/props/capitals/gondwana.svg",
@@ -310,12 +340,13 @@ export const FAUNA_SRC: Record<FaunaId, string> = {
   mastodon: "/map/fauna/mastodon.png",
   sabertooth: "/map/fauna/sabertooth.png",
   mammoth: "/map/fauna/mammoth.png",
+  giant: "/map/fauna/giant.png",
 };
 
 export type BeastId =
   | "direwolf"
-  | "elephant"
-  | "mastodon"
+  | "rhino"
+  | "gorilla"
   | "jaguar"
   | "tiger"
   | "grizzly"
@@ -324,50 +355,67 @@ export type BeastId =
   | "crocodile"
   | "sabertooth"
   | "mammoth"
-  | "polar-bear";
+  | "polar-bear"
+  | "giant";
 
 export interface BeastDef {
   id: BeastId;
   name: string;
+  /** Damages enemy units. */
   atk: number;
+  /** Knocks through walls. */
+  strength: number;
+  /** Movement on the field. */
+  speed: number;
+  /** Hit points against enemy blows. */
+  health: number;
+  /** How far away they start damaging enemies. */
+  range: number;
+  /** Alias of health for auto-resolve. */
   def: number;
   cost: number;
 }
 
+function beast(id: BeastId, name: string, atk: number, strength: number, speed: number, health: number, range: number, cost: number): BeastDef {
+  return { id, name, atk, strength, speed, health, range, def: health, cost };
+}
+
 export const EMPIRE_BEAST: Record<EmpireId, BeastDef> = {
-  asgard: { id: "polar-bear", name: "Polar bear", atk: 15, def: 10, cost: 9 },
-  eldorado: { id: "mastodon", name: "Mastodon", atk: 16, def: 10, cost: 10 },
-  aztec: { id: "jaguar", name: "Jaguar", atk: 13, def: 6, cost: 8 },
-  tartaria: { id: "tiger", name: "Tiger", atk: 15, def: 9, cost: 9 },
-  siberia: { id: "grizzly", name: "Grizzly", atk: 15, def: 9, cost: 8 },
-  lumuria: { id: "elephant", name: "Elephant", atk: 16, def: 10, cost: 10 },
-  egypt: { id: "lion", name: "Lion", atk: 14, def: 7, cost: 7 },
-  cape: { id: "hippo", name: "Hippo", atk: 15, def: 10, cost: 9 },
-  gondwana: { id: "crocodile", name: "Crocodile", atk: 13, def: 8, cost: 7 },
-  thule: { id: "sabertooth", name: "Sabertooth", atk: 16, def: 7, cost: 9 },
-  alaska: { id: "mammoth", name: "Mammoth", atk: 16, def: 11, cost: 10 },
-  atlantis: { id: "direwolf", name: "Direwolf", atk: 16, def: 8, cost: 8 },
+  asgard: beast("polar-bear", "Polar bear", 20, 16, 16, 17, 11, 9),
+  eldorado: beast("gorilla", "Gorilla", 15, 15, 10, 18, 13, 9),
+  aztec: beast("jaguar", "Jaguar", 14, 10, 17, 11, 18, 8),
+  tartaria: beast("tiger", "Tiger", 17, 14, 16, 13, 15, 9),
+  siberia: beast("grizzly", "Grizzly", 19, 15, 15, 16, 12, 9),
+  lumuria: beast("rhino", "Rhino", 10, 18, 13, 15, 15, 10),
+  egypt: beast("lion", "Lion", 15, 12, 20, 12, 14, 7),
+  sumer: beast("giant", "Giant", 18, 18, 14, 15, 13, 11),
+  cape: beast("hippo", "Hippo", 13, 17, 14, 15, 12, 9),
+  gondwana: beast("crocodile", "Crocodile", 15, 14, 12, 20, 10, 8),
+  thule: beast("sabertooth", "Sabertooth", 16, 13, 18, 15, 13, 9),
+  alaska: beast("mammoth", "Mammoth", 11, 19, 11, 19, 12, 10),
+  atlantis: beast("direwolf", "Direwolf", 18, 11, 19, 14, 15, 8),
 };
 
 export const BEAST_SRC: Record<BeastId, string> = {
   direwolf: "/map/fauna/direwolf.png",
-  elephant: "/map/fauna/elephant.png",
-  mastodon: "/map/fauna/mastodon.png?v=2",
+  rhino: "/map/fauna/rhino.png",
+  gorilla: "/map/fauna/gorilla.png",
   jaguar: "/map/fauna/jaguar.png",
   tiger: "/map/fauna/tiger.png",
   grizzly: "/map/fauna/grizzly.png",
   lion: "/map/fauna/lion.png",
   hippo: "/map/fauna/hippo.png",
   crocodile: "/map/fauna/crocodile.png",
-  sabertooth: "/map/fauna/sabertooth.png?v=2",
-  mammoth: "/map/fauna/mammoth.png?v=2",
+  sabertooth: "/map/fauna/sabertooth.png?v=3",
+  mammoth: "/map/fauna/mammoth.png?v=3",
   "polar-bear": "/map/fauna/polar-bear.png",
+  giant: "/map/fauna/giant.png",
 };
 
 export const BEAST_LABEL: Record<BeastId, string> = {
   direwolf: "Direwolf",
-  elephant: "Elephant",
-  mastodon: "Mastodon",
+  rhino: "Rhino",
+  gorilla: "Gorilla",
   jaguar: "Jaguar",
   tiger: "Tiger",
   grizzly: "Grizzly",
@@ -377,10 +425,18 @@ export const BEAST_LABEL: Record<BeastId, string> = {
   sabertooth: "Sabertooth",
   mammoth: "Mammoth",
   "polar-bear": "Polar bear",
+  giant: "Giant",
 };
 
 export function beastOf(empire: EmpireId): BeastDef {
   return EMPIRE_BEAST[empire];
+}
+
+/** Field stats for a dragon: trained 50, special (capital) ~62, rare (region) ~87. */
+export function dragonPowerFor(tier: number): number {
+  if (tier >= 3) return 87;
+  if (tier >= 2) return 62;
+  return 50;
 }
 
 export const OCEAN_LABELS = OCEAN_LABELS_GEN;

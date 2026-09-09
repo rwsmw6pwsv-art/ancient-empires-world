@@ -99,8 +99,13 @@ export function WorldMap({
   const fittedKey = useRef<string>("");
   const ownersRef = useRef<Record<string, string>>({});
   const [flashes, setFlashes] = useState<Record<string, number>>({});
+  const [paintDeep, setPaintDeep] = useState(false);
   const targetSet = useMemo(() => new Set(targets), [targets]);
   const myIds = useMemo(() => ownedIds(state, 0), [state]);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setPaintDeep(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
   useEffect(() => {
     const prev = ownersRef.current;
     const next: Record<string, string> = {};
@@ -169,6 +174,7 @@ export function WorldMap({
     const k = clamp(Math.min(visW / bw, visH / bh), 1.6, MAX_K);
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
+    if (!Number.isFinite(k) || !Number.isFinite(cx) || !Number.isFinite(cy)) return false;
     setView({ k, x: WORLD_W / 2 - cx * k, y: WORLD_H / 2 - cy * k });
     return fromPath;
   }, []);
@@ -346,7 +352,7 @@ export function WorldMap({
       >
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <image
-            href="/map/world.webp?v=yd-112"
+            href="/map/world-v130.webp"
             width={WORLD_W}
             height={WORLD_H}
             preserveAspectRatio="none"
@@ -539,6 +545,8 @@ export function WorldMap({
               </g>
             );
           })}
+          {paintDeep ? (
+          <>
           {OCEAN_LABELS.map((o) => (
             <text
               key={`${o.name}-${o.x}`}
@@ -549,18 +557,6 @@ export function WorldMap({
               fontSize={Math.max(7, 12 / view.k)}
             >
               {o.name}
-            </text>
-          ))}
-          {TERRITORIES.map((d) => (
-            <text
-              key={`num-${d.id}`}
-              x={d.labelX}
-              y={d.labelY - 12}
-              className="map-num"
-              textAnchor="middle"
-              fontSize={Math.max(5.5, 8 / Math.sqrt(view.k))}
-            >
-              {d.name}
             </text>
           ))}
           {TERRITORIES.map((d) => {
@@ -690,6 +686,8 @@ export function WorldMap({
               </g>
             );
           })}
+          </>
+          ) : null}
         </g>
       </svg>
       <div className="map-shimmer" />

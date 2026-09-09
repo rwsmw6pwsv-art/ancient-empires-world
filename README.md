@@ -1,10 +1,10 @@
 # Ancient Empires
 
-Turn-based strategy on an ice-age world. Twelve courts. Thirteen regions. Two hundred sixty-nine hex lands.
+Turn-based strategy on an ice-age world. Thirteen empires. Thirteen regions. Two hundred sixty-nine hex lands.
 
-Pick a house, claim its capital, then march, siege, and lock regions before rival courts do.
+Pick a house, claim its capital, then march, siege, and lock regions before rival empires do.
 
-## Courts
+## Empires
 
 | Empire | Region | Beast |
 | --- | --- | --- |
@@ -25,13 +25,13 @@ Lands are named for terrain, not countries — ice, veld, ghat, reef. Middle Eas
 
 ## Play
 
-1. Choose a court and opening.
+1. Choose an empire and opening.
 2. Train levies, raid, or march into neighboring hexes.
 3. Lay siege to walled cities; raise wood, then stone.
 4. Lock a whole region for bonus gold.
-5. Hold five regions to win.
+5. Hold seven regions to win. There is no turn limit.
 
-Saves live in the browser. Difficulty changes how hard rival courts push back.
+Saves live in the browser. Difficulty changes how hard rival empires push back.
 
 ## Run it
 

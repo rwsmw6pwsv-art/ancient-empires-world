@@ -345,7 +345,14 @@ function blankTribe(id: string): TerritoryState {
     ladders: 0,
     towers: 0,
     scorpions: 0,
+    wallRank: 0,
+    outerWallRank: 0,
+    keepRank: 0,
+    towerRank: 0,
+    moatRank: 0,
+    scorpionRank: 0,
     fort: 1,
+    dragonTier: 0,
     breach: 0,
     besiegedFrom: null,
     pressure: 0,
@@ -374,6 +381,13 @@ function migrate(raw: GameState): GameState {
       t.towers = t.towers ?? 0;
       t.bowmen = t.bowmen ?? 0;
       t.scorpions = t.scorpions ?? 0;
+      t.wallRank = t.wallRank ?? (t.fort >= 2 ? 2 : t.fort >= 1 ? 1 : 0);
+      t.outerWallRank = t.outerWallRank ?? 0;
+      t.keepRank = t.keepRank ?? (t.fort >= 4 ? 2 : t.fort >= 3 ? 1 : 0);
+      t.towerRank = t.towerRank ?? 0;
+      t.moatRank = t.moatRank ?? 0;
+      t.scorpionRank = t.scorpionRank ?? Math.min(5, t.scorpions ?? 0);
+      t.dragonTier = t.dragonTier ?? 0;
       t.breach = t.breach ?? 0;
       t.besiegedFrom = t.besiegedFrom ?? null;
       if (t.fort == null) {
@@ -510,6 +524,8 @@ function migrate(raw: GameState): GameState {
       if (p.silver === undefined) p.silver = 12;
       if (p.food === undefined) p.food = 8;
       if (p.lastLands === undefined) p.lastLands = 1;
+      if (p.specialDragons === undefined) p.specialDragons = 0;
+      if (p.rareDragons === undefined) p.rareDragons = 0;
     }
   }
   if (!s.marches) s.marches = [];

@@ -12,6 +12,7 @@ import { ActionSheet, AttackPreview, OccupySheet, WatchReport, type ActionKind, 
 import { WorldMap } from "./WorldMap";
 import { ActionIcon } from "./Cost";
 import { Hint } from "./Hint";
+import { LoadingScreen, ScreenGate } from "./LoadingScreen";
 
 export function PlayScreen({
   empire,
@@ -62,6 +63,7 @@ export function PlayScreen({
     abandon,
   } = useGame();
   const [action, setAction] = useState<ActionKind | null>(null);
+  const [bootError, setBootError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!fx.length) return;
@@ -70,28 +72,41 @@ export function PlayScreen({
   }, [fx]);
 
   useEffect(() => {
-    if (empire === "resume") {
-      if (!resume()) nav({ to: "/" });
-      return;
+    setBootError(null);
+    try {
+      if (empire === "resume") {
+        if (!resume()) nav({ to: "/" });
+        return;
+      }
+      if (!(HOUSES as readonly string[]).includes(empire)) {
+        nav({ to: "/" });
+        return;
+      }
+      newGame({
+        empire: empire as EmpireId,
+        difficulty: (["easy", "normal", "hard"].includes(difficulty) ? difficulty : "normal") as Difficulty,
+        opening: "capital" as Opening,
+      });
+    } catch (err) {
+      setBootError(err instanceof Error ? err.message : "The world failed to open.");
     }
-    if (!(HOUSES as readonly string[]).includes(empire)) {
-      nav({ to: "/" });
-      return;
-    }
-    newGame({
-      empire: empire as EmpireId,
-      difficulty: (["easy", "normal", "hard"].includes(difficulty) ? difficulty : "normal") as Difficulty,
-      opening: "capital" as Opening,
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empire, difficulty, opening]);
 
-  if (!state) {
+  if (bootError) {
     return (
-      <main className="flex min-h-dvh items-center justify-center bg-bg text-muted">
-        Drawing the world…
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-bg px-6 text-center text-fg">
+        <p className="font-display text-xl">The world would not open</p>
+        <p className="max-w-md text-sm text-muted">{bootError}</p>
+        <button type="button" className="text-sm underline" onClick={() => nav({ to: "/" })}>
+          Return to the empires
+        </button>
       </main>
     );
+  }
+
+  if (!state) {
+    return <LoadingScreen label="Generating the world" wait />;
   }
 
   const from = state.marchFrom;
@@ -108,6 +123,7 @@ export function PlayScreen({
   }
 
   return (
+    <ScreenGate pack="play" label="Generating the world">
     <main className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
       <div className="shrink-0 px-3 pt-3 sm:px-4 sm:pt-4">
         <Hud
@@ -223,12 +239,13 @@ export function PlayScreen({
         ) : null}
       </div>
       {!pendingBattle ? (
-        <nav className="grid shrink-0 grid-cols-3 gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+        <nav className="grid shrink-0 grid-cols-2 gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:grid-cols-4 sm:px-4">
           {(
             [
-              ["train", "Train", "Raise warriors (1 watch), archers (1), knights (2), beasts (3) or a dragon (5). House beasts raise only at your capital."],
-              ["march", "March", "Set the host, then tap a neighbour. Columns take a watch to arrive. Send different units to different lands in the same watch."],
-              ["build", "Build", "Raise a port, mine, market, walls, keep, ship or scorpion in the selected land. Siege engines raise on the siege screen."],
+              ["train", "Train", "Raise warriors, archers, knights, beasts or a dragon."],
+              ["march", "March", "Set the host, then tap a neighbour."],
+              ["build", "Build", "Ports, mines, markets, farms, roads and ships."],
+              ["defend", "Defend", "Walls, outer walls, keep, towers, moats and scorpions — the city ring."],
             ] as const
           ).map(([id, label, hint]) => (
             <div key={id} className="flex items-center gap-1">
@@ -271,5 +288,6 @@ export function PlayScreen({
         />
       ) : null}
     </main>
+    </ScreenGate>
   );
 }

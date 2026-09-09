@@ -1,22 +1,32 @@
 import { useState } from "react";
 import { empireOf } from "@/lib/game/empires";
-import { canRaiseSiege, cityWatch, defenseStrength, forceStrength, fortOf, hasKindJob, jobsAt, jobsOfKind, legalMarchTargets, marchesFrom, oddsLabel, shipsCap, siegeTargetOf, standing, worksCost, worksRank } from "@/lib/game/engine";
+import { canRaiseSiege, cityWatch, defenseStrength, forceStrength, fortOf, hasKindJob, jobsAt, jobsOfKind, legalMarchTargets, marchesFrom, oddsLabel, shipsCap, siegeTargetOf, siegeTurnsFor, standing, worksCost, worksRank } from "@/lib/game/engine";
 import type { EmpireId, GameState, Job, JobKind, UnitKind } from "@/lib/game/types";
-import { CAPITOL, CONTINENT_NAMES, DRAGON_CAP, FORT_CAP, FORT_LABEL, FORT_TURNS, SCORPION_CAP, SIEGE_CAP, SIEGE_KINDS, SIEGE_LABEL, SIEGE_TURNS, UNIT_COST, UNIT_LABEL, UNIT_TURNS, WORKS_CAP, isSiegeKind, isTrainKind } from "@/lib/game/types";
+import { CAPITOL, CONTINENT_NAMES, FORT_CAP, FORT_LABEL, SIEGE_CAP, SIEGE_KINDS, SIEGE_LABEL, UNIT_COST, UNIT_LABEL, UNIT_TURNS, WORKS_CAP, isSiegeKind, isTrainKind } from "@/lib/game/types";
 import { TERRITORY_BY_ID, seaNeighbors } from "@/lib/game/world";
 import { landscapeOf, beastOf, BEAST_SRC, CAPITAL_SRC, FAUNA_LABEL, PROP_SRC, RESOURCE_LABEL, TERRAIN_LABEL, WONDER_LABEL } from "@/lib/game/landscape";
+import {
+  DEFENSE_HINT,
+  DEFENSE_KINDS,
+  DEFENSE_LABEL,
+  currentDefenseLabel,
+  defenseRank,
+  isDefenseKind,
+  nextDefenseLabel,
+  type DefenseKind,
+} from "@/lib/game/defense";
 import { Button } from "@/components/ui/button";
 import { sfx } from "@/lib/sfx";
 import { CostRow, HostStrip, ResourceDot, SiegeMark, UnitMark, WorkMark } from "./Cost";
 import { Hint } from "./Hint";
 
-export type ActionKind = "train" | "march" | "build";
+export type ActionKind = "train" | "march" | "build" | "defend";
 
 const TRAIN_HINT = {
   levy: "Raise a warrior. Best in the melee. Attack 2, defence 1. Gold and metal. Takes 1 watch. Silver wages with the rest of the infantry.",
   bowman: "Raise an archer. Fragile if hit, long range. On a keep they rain arrows on attackers. Gold, timber and metal. Takes 1 watch.",
   knight: "Raise a mounted knight. Most effective riding warriors down. Attack 2, defence 2. Gold and metal. Takes 2 watches.",
-  dragon: "Raise a dragon. It tears walls and defences and roams the field from every side. Only another dragon or a scorpion can wound it. 25 gold. One per province. Takes 5 watches.",
+  dragon: "Raise a dragon. It burns scorpions first, then gates, towers, beasts, knights, archers and warriors. It circles the city — it does not flee the field. Only another dragon or a scorpion can wound it. 25 gold. Takes 5 watches. No house cap — the purse and the watches are the limit.",
 } as const;
 
 const BUILD_HINT: Record<string, string> = {
@@ -27,11 +37,16 @@ const BUILD_HINT: Record<string, string> = {
   ship: "Lay another keel. Improved harbours hold more (2 / 4 / 6). Each ship sails with a column and pays two trade gold. Sea landings arrive next watch, same as land marches.",
   road: "Pave this land. A trade route forms with every neighbouring paved city you hold, and pays gold each watch.",
   farm: "Sow fields or fisheries. Pays food each watch. Improve with gold. Citizens starve without enough grain.",
-  ram: "Timber a ram while a neighbour is under siege. Free, one watch. It knocks the gate down — nothing else.",
-  catapult: "Frame a catapult while a neighbour is under siege. Free, five watches. It weakens their defences from a distance before you assault.",
-  ladder: "Cut ladders while a neighbour is under siege. Free, one watch. They scale the wall without breaking it.",
-  tower: "Raise a siege tower while a neighbour is under siege. Free, three watches. It carries up to 20 warriors, or 5 knights, or 5 beasts over the wall.",
+  ram: "Timber a ram while a neighbour is under siege. Free. Up to five. The first takes one watch; each extra ram takes longer.",
+  catapult: "Frame a catapult while a neighbour is under siege. Free. Up to five. The first takes five watches; a battery takes a long siege. After a breach they chew towers.",
+  ladder: "Cut ladders while a neighbour is under siege. Free. Up to five. The first takes one watch; each extra set takes longer.",
+  tower: "Raise a siege tower while a neighbour is under siege. Free. Up to five. The first takes three watches; each extra tower takes longer. It carries warriors, knights or beasts over the wall.",
   scorpion: "Raise a scorpion on the walls. The only ground engine that can wound a dragon. Gold, timber and metal.",
+  walls: "Inner walls. Attackers smash a gate or a breach to enter. Wood, then stone, then high, giant and colossal stone.",
+  "outer-walls": "First ring. Slows the host before they reach the inner walls.",
+  "keep-works": "Holds stores and the last garrison until the walls fall.",
+  towers: "Archers on the walls. After a breach they can be killed.",
+  moats: "Slows attackers and cuts their range and blows. Single, then dual, then a third around the keep.",
 };
 
 const CARD_HINT: Record<string, string> = {
@@ -57,6 +72,7 @@ function jobTitle(state: GameState, job: Job): string {
   }
   if (isTrainKind(job.kind)) return UNIT_LABEL[job.kind];
   if (job.kind === "castle") return "Walls";
+  if (isDefenseKind(job.kind)) return DEFENSE_LABEL[job.kind];
   if (isSiegeKind(job.kind)) return SIEGE_LABEL[job.kind];
   return job.kind.charAt(0).toUpperCase() + job.kind.slice(1);
 }
@@ -120,6 +136,12 @@ export function ProvinceBanner({ state, selected }: { state: GameState; selected
   const beastName = ownerBeast?.name ?? "Beasts";
   const works = [
     t.castle || fortOf(t) > 0 ? FORT_LABEL[fortOf(t)] : null,
+    defenseRank(t, "walls") > 0 ? `Walls ${currentDefenseLabel(t, "walls")}` : null,
+    defenseRank(t, "outer-walls") > 0 ? `Outer ${currentDefenseLabel(t, "outer-walls")}` : null,
+    defenseRank(t, "keep-works") > 0 ? `Keep ${currentDefenseLabel(t, "keep-works")}` : null,
+    defenseRank(t, "towers") > 0 ? currentDefenseLabel(t, "towers") : null,
+    defenseRank(t, "moats") > 0 ? currentDefenseLabel(t, "moats") : null,
+    defenseRank(t, "scorpion") > 0 ? currentDefenseLabel(t, "scorpion") : null,
     t.market ? `Market${worksRank(t, "market") > 1 ? ` ${"I".repeat(worksRank(t, "market"))}` : ""}` : null,
     t.port ? `Port${worksRank(t, "port") > 1 ? ` ${"I".repeat(worksRank(t, "port"))}` : ""} · ${t.ships} ships` : null,
     t.mine ? `Mine${worksRank(t, "mine") > 1 ? ` ${"I".repeat(worksRank(t, "mine"))}` : ""}` : null,
@@ -303,7 +325,7 @@ export function ActionSheet({
                   size="sm"
                   variant="secondary"
                   className="h-9 flex-1 justify-between px-2"
-                  disabled={kind === "dragon" && (t.dragons >= DRAGON_CAP || hasKindJob(state, selected, "dragon"))}
+                  disabled={kind === "dragon" && hasKindJob(state, selected, "dragon")}
                   onClick={() => onTrain(kind)}
                 >
                   <span className="inline-flex items-center gap-1">
@@ -372,12 +394,65 @@ export function ActionSheet({
     );
   }
 
+  if (action === "defend") {
+    return (
+      <div className="panel action-sheet flex flex-col gap-1.5">
+        <p className="text-[10px] tracking-[0.16em] text-muted uppercase">City defence</p>
+        <p className="text-[11px] text-muted">Walls, moats, towers and scorpions — separate from mines, farms and ports.</p>
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {DEFENSE_KINDS.map((kind) => {
+            const rank = defenseRank(t, kind);
+            const cap = kind === "moats" ? 3 : 5;
+            const done = rank >= cap;
+            const busy = hasKindJob(state, selected, kind);
+            return (
+              <div key={kind} className="flex flex-col gap-1">
+                <div className="flex items-center gap-1">
+                  <Hint text={DEFENSE_HINT[kind]} />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-auto min-h-9 flex-1 justify-between px-2 py-1.5 text-left"
+                    disabled={done || busy}
+                    onClick={() => onBuild(kind)}
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-medium">{DEFENSE_LABEL[kind]}</span>
+                      <span className="text-[10px] text-muted">
+                        {currentDefenseLabel(t, kind)}
+                        {done ? "" : ` → ${nextDefenseLabel(t, kind)}`}
+                      </span>
+                    </span>
+                    <span className="inline-flex shrink-0 items-center gap-1">
+                      {done ? (
+                        <span className="text-[10px] text-muted">Max</span>
+                      ) : (
+                        <CostRow {...worksCost(human, kind, t)} />
+                      )}
+                    </span>
+                  </Button>
+                </div>
+                {jobsOfKind(state, selected, kind).map((job) => (
+                  <JobTrack
+                    key={job.id}
+                    label={jobTitle(state, job)}
+                    remaining={job.remaining}
+                    total={job.total || job.remaining}
+                    onCancel={haltJob ? () => haltJob(job.id) : undefined}
+                  />
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   if (action === "build") {
     const rankOf = (kind: JobKind) => worksRank(t, kind);
     const sieging = canRaiseSiege(state, selected);
     const mark = siegeTargetOf(state, selected);
-    const fortStep = Math.min(FORT_CAP, fortOf(t) + 1) as 1 | 2 | 3 | 4;
-    const fortWait = fortStep === 1 ? 1 : FORT_TURNS[fortStep];
     const labelOf = (kind: JobKind, base: string) => {
       const r = rankOf(kind);
       if (kind === "castle") {
@@ -391,13 +466,11 @@ export function ActionSheet({
     };
     const jobs: { kind: JobKind; label: string; disabled: boolean }[] = [
       { kind: "port", label: labelOf("port", "Port"), disabled: !meta.coastal || rankOf("port") >= WORKS_CAP || hasKindJob(state, selected, "port") },
-      { kind: "castle", label: labelOf("castle", "Walls"), disabled: fortOf(t) >= FORT_CAP || hasKindJob(state, selected, "castle") },
       { kind: "market", label: labelOf("market", "Market"), disabled: rankOf("market") >= WORKS_CAP || hasKindJob(state, selected, "market") },
       { kind: "mine", label: labelOf("mine", "Mine"), disabled: meta.coastal || rankOf("mine") >= WORKS_CAP || hasKindJob(state, selected, "mine") },
       { kind: "ship", label: t.ships > 0 ? "Keel" : "Ship", disabled: !meta.coastal || !t.port || t.ships + jobsOfKind(state, selected, "ship").length >= shipsCap(t) },
       { kind: "road", label: "Road", disabled: t.road || hasKindJob(state, selected, "road") },
       { kind: "farm", label: labelOf("farm", "Farm"), disabled: rankOf("farm") >= WORKS_CAP || hasKindJob(state, selected, "farm") },
-      { kind: "scorpion", label: (t.scorpions ?? 0) > 0 ? `Scorpion · ${t.scorpions}` : "Scorpion", disabled: hasKindJob(state, selected, "scorpion") || (t.scorpions ?? 0) >= SCORPION_CAP },
     ];
     const works = jobs.filter((j) => !isSiegeKind(j.kind));
     const row = (list: typeof jobs) =>
@@ -423,11 +496,10 @@ export function ActionSheet({
                 <span>{j.label}</span>
               </span>
               {isSiegeKind(j.kind) ? (
-                <span className="text-[10px] text-muted">{SIEGE_TURNS[j.kind]} {SIEGE_TURNS[j.kind] === 1 ? "watch" : "watches"}</span>
+                <span className="text-[10px] text-muted">{siegeTurnsFor(t, j.kind, jobsOfKind(state, selected, j.kind).length)} {siegeTurnsFor(t, j.kind, jobsOfKind(state, selected, j.kind).length) === 1 ? "watch" : "watches"}</span>
               ) : (
                 <span className="inline-flex items-center gap-1">
                   <CostRow {...worksCost(human, j.kind, t)} />
-                  {j.kind === "castle" ? <span className="text-[10px] text-muted">{fortWait}w</span> : null}
                 </span>
               )}
             </Button>
@@ -594,14 +666,14 @@ export function ActionSheet({
                 }`}
                 onClick={() => {
                   sfx("tick");
-                  onSend({ [key]: send > 0 ? 0 : 1 });
+                  onSend({ [key]: send >= have ? 0 : send + 1 });
                 }}
               >
                 <span className="inline-flex items-center gap-1">
                   <SiegeMark kind={kind} />
                   {SIEGE_LABEL[kind]}
                 </span>
-                <span className="tabular-nums">{send > 0 ? "brings" : "leave"}</span>
+                <span className="tabular-nums">{send > 0 ? `brings ${send}` : "leave"}</span>
               </button>
             );
           })}
@@ -995,7 +1067,7 @@ export function AttackPreview({
               const bring = bringOf(kind);
               const raising = jobsOfKind(state, fromId, kind);
               const capped = have + raising.length >= SIEGE_CAP;
-              const wait = SIEGE_TURNS[kind];
+              const wait = siegeTurnsFor(fromTerr, kind, raising.length);
               return (
                 <div key={kind} className="flex flex-col gap-1 rounded-[var(--radius-sm)] border border-border bg-raised/70 px-2 py-1.5">
                   <div className="flex items-center justify-between gap-1">
@@ -1022,10 +1094,10 @@ export function AttackPreview({
                         className="h-8 px-2 text-[11px]"
                         onClick={() => {
                           sfx("tick");
-                          onSend({ [sendKey(kind)]: bring > 0 ? 0 : 1 });
+                          onSend({ [sendKey(kind)]: bring >= have ? 0 : bring + 1 });
                         }}
                       >
-                        {bring > 0 ? "Brings" : "Leave"}
+                        {bring > 0 ? `Brings ${bring}` : "Leave"}
                       </Button>
                     ) : null}
                   </div>
