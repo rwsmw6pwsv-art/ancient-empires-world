@@ -1,6 +1,6 @@
-# Ancient Empires
+# Ancient Empires of Dragon Kings
 
-Turn-based strategy on an ice-age world. Thirteen empires. Thirteen regions. Two hundred sixty-nine hex lands.
+Turn-based strategy on an ice-age globe. Thirteen empires. Thirteen regions. Two hundred sixty-nine hex lands wrapped so East Asia meets West America.
 
 Pick a house, claim its capital, then march, siege, and lock regions before rival empires do.
 
@@ -49,4 +49,4 @@ npm run preview
 
 ## Stack
 
-React 19, TanStack Start, Vite, Tailwind v4. Map data lives in `src/lib/game/world.ts`.
+React 19, TanStack Start, Vite, Tailwind v4, three.js. Hex lands live in `src/lib/game/world.ts` and wrap onto a globe in `src/lib/game/globe.ts`.

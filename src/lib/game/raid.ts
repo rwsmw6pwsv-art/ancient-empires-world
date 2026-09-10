@@ -1,10 +1,10 @@
 // @ts-nocheck
 import { empireOf } from "./empires";
-import { beastOf, dragonPowerFor, landscapeOf, type TerrainId } from "./landscape";
-import type { GameState, HostForce, SiegeKind, SiegeStock, TerritoryState, UnitKind } from "./types";
+import { beastOf, cityArtForRanks, dragonPowerFor, landscapeOf, type TerrainId } from "./landscape";
+import type { EmpireId, GameState, HostForce, SiegeKind, SiegeStock, TerritoryState, UnitKind } from "./types";
 import { EMPTY_HOST, SIEGE_CAP, SIEGE_LABEL, TOWER_CARGO, UNIT_CAP, UNIT_LABEL_PLURAL } from "./types";
 import { TERRITORY_BY_ID, landNeighbors } from "./world";
-import { cityWatch, isBarbarian, worksRank as castleRankOf } from "./engine";
+import { cityWatch, isBarbarian, worksRank as castleRankOf, beastOfLand, beastOfTerritory } from "./engine";
 import {
   defenseRank,
   keepHpFor,
@@ -30,6 +30,10 @@ export interface RaidBattleStatus {
   wallBreached: boolean;
   towersDown: number;
   towersTotal: number;
+}
+export interface RaidArmyHp {
+  atk: { cur: number; max: number };
+  def: { cur: number; max: number };
 }
 export type RaidKind = UnitKind | SiegeKind;
 export type BattleSide = "atk" | "def";
@@ -72,6 +76,7 @@ export interface RaidUnit {
   facing: number;
   postId: string | null;
   holdGate: boolean;
+  gateRing: "outer" | "inner" | "keep" | null;
   order: RaidOrder;
   held: boolean;
   file: number;
@@ -96,6 +101,8 @@ export interface RaidBuilding {
   hostId: string | null;
   aimed: number;
   press: number;
+  gatePost: boolean;
+  ring: "outer" | "inner" | "keep" | null;
 }
 
 export interface RaidWall {
@@ -156,6 +163,7 @@ export interface RaidState {
   siege: SiegeStock;
   humanSide: BattleSide;
   stock: HostForce & SiegeStock;
+  atkStock: HostForce & SiegeStock;
   deployed: HostForce & SiegeStock;
   units: RaidUnit[];
   buildings: RaidBuilding[];
@@ -186,6 +194,8 @@ export interface RaidState {
   fromName: string;
   toName: string;
   beastName: string;
+  defBeastName: string;
+  beastId: string | null;
   squash: number;
   moats: RaidMoat[];
   bridges: RaidBridge[];
@@ -199,8 +209,10 @@ export interface RaidState {
   towerRank: number;
   tactic: RaidTactic;
   orders: Record<RaidKind, RaidOrder>;
+  orderLots: Partial<Record<RaidKind, Partial<Record<RaidOrder, number>>>>;
   lastOrders: Record<RaidKind, RaidOrder>;
   wave: number;
+  firstBreach: { id: string; x: number; y: number; gate: boolean } | null;
   coastal: boolean;
   worldX: number;
   worldY: number;
@@ -229,7 +241,7 @@ export interface RaidOutcome {
   keepDestroyed: boolean;
 }
 
-export type CityArtId = "camp" | "wood" | "stone" | "high" | "outer" | "moat1" | "moat2" | "ring";
+export type { CityArtId } from "./landscape";
 
 export type RaidOrderRow = { id: RaidOrder; label: string; hint: string };
 
@@ -252,6 +264,10 @@ export const RAID_TACTICS: { id: RaidTactic; label: string; hint: string }[] = [
 
 /** South-facing city gate (canvas +Y). One gate per ring. */
 export const RAID_GATE_A = Math.PI / 2;
+/** Angular offset of the two gate-towers flanking each gate. */
+export const RAID_GATE_TOWER_DA = 0.22;
+var GATE_WATCH = 8;
+var BEAST_GATE = 5;
 var STEP = 1 / 60;
 /** Playable battle speeds. Slowest is the default so the field can be read. */
 export const RAID_SPEEDS = [0.12, 0.25, 0.5, 1] as const;
@@ -276,6 +292,11 @@ levy: [
 		hint: "Ride the tower over the wall, then keep fighting."
 	},
 	{
+		id: "keep",
+		label: "Keep",
+		hint: "Drive for the citadel. The land is not yours until the keep falls."
+	},
+	{
 		id: "hold",
 		label: "Hold",
 		hint: "Stand until the next charge."
@@ -298,6 +319,11 @@ bowman: [
 		hint: "Cover the ram at the gate."
 	},
 	{
+		id: "keep",
+		label: "Keep",
+		hint: "Shoot the citadel. The land is not yours until it falls."
+	},
+	{
 		id: "hold",
 		label: "Hold",
 		hint: "Stand until the next charge."
@@ -313,6 +339,11 @@ knight: [
 		id: "tower",
 		label: "Siege tower",
 		hint: "Ride over the wall and flank the garrison."
+	},
+	{
+		id: "keep",
+		label: "Keep",
+		hint: "Ride for the citadel. The land is not yours until it falls."
 	},
 	{
 		id: "hold",
@@ -337,6 +368,11 @@ beast: [
 		hint: "Ride over the wall."
 	},
 	{
+		id: "keep",
+		label: "Keep",
+		hint: "Break for the citadel. The land is not yours until it falls."
+	},
+	{
 		id: "hold",
 		label: "Hold",
 		hint: "Stand until the next charge."
@@ -352,6 +388,11 @@ catapult: [
 		id: "posts",
 		label: "Towers",
 		hint: "Aim for the defensive towers."
+	},
+	{
+		id: "keep",
+		label: "Keep",
+		hint: "Hurl at the citadel. The land is not yours until it falls."
 	},
 	{
 		id: "hold",
@@ -373,7 +414,7 @@ dragon: [
 	{
 		id: "keep",
 		label: "Keep",
-		hint: "Fly straight at the citadel."
+		hint: "Fly straight at the citadel. The land is not yours until it falls."
 	},
 	{
 		id: "hold",
@@ -382,6 +423,104 @@ dragon: [
 	}
 ]
 };
+
+export const DEF_KIND_ORDERS: Partial<Record<RaidKind, RaidOrderRow[]>> = {
+	levy: [
+		{
+			id: "gate",
+			label: "Hold gate",
+			hint: "Stand behind the gate. Ride a wall breach if one opens first."
+		},
+		{
+			id: "wall",
+			label: "First breach",
+			hint: "Ride to the first hole in the wall or a fallen gate."
+		},
+		{
+			id: "keep",
+			label: "Protect keep",
+			hint: "Stand the citadel and meet whoever comes inside."
+		}
+	],
+	bowman: [
+		{
+			id: "gate",
+			label: "Hold gate",
+			hint: "Fill the gate-towers first and shoot whoever drives the gate."
+		},
+		{
+			id: "wall",
+			label: "First breach",
+			hint: "Stand the walls and cover the first hole."
+		},
+		{
+			id: "keep",
+			label: "Protect keep",
+			hint: "Stand the citadel and shoot whoever comes for it."
+		}
+	],
+	knight: [
+		{
+			id: "wall",
+			label: "First breach",
+			hint: "Start around the ring. Ride to the first hole or fallen gate."
+		},
+		{
+			id: "gate",
+			label: "Hold gate",
+			hint: "Muster at the gate, then ride a breach if the walls break elsewhere."
+		},
+		{
+			id: "keep",
+			label: "Protect keep",
+			hint: "Hold the citadel and ride down whoever comes inside."
+		}
+	],
+	beast: [
+		{
+			id: "gate",
+			label: "Hold gate",
+			hint: "Stand the gate. Ride a wall breach if one opens first."
+		},
+		{
+			id: "wall",
+			label: "First breach",
+			hint: "Ride to the first hole in the wall or a fallen gate."
+		},
+		{
+			id: "keep",
+			label: "Protect keep",
+			hint: "Guard the citadel and meet whoever comes inside."
+		}
+	],
+	dragon: [
+		{
+			id: "wyrm",
+			label: "Dragons",
+			hint: "Start over the keep. Hunt enemy dragons, then the largest group at the gate or a breach."
+		},
+		{
+			id: "keep",
+			label: "Protect keep",
+			hint: "Hold the citadel and burn whoever comes inside."
+		},
+		{
+			id: "gate",
+			label: "Hold gate",
+			hint: "Hold over the gate and burn the column there."
+		},
+		{
+			id: "wall",
+			label: "First breach",
+			hint: "Cover the first hole in the wall or a fallen gate."
+		}
+	]
+};
+
+export function ordersFor(side: BattleSide): Partial<Record<RaidKind, RaidOrderRow[]>> {
+	return side === "def" ? DEF_KIND_ORDERS : KIND_ORDERS;
+}
+
 export function defaultOrders(gear?: SiegeStock): Record<RaidKind, RaidOrder> {
 const rams = gear?.rams ?? 0;
 const ladders = gear?.ladders ?? 0;
@@ -398,6 +537,154 @@ return {
 	tower: "wall"
 };
 }
+
+export function defaultDefOrders(): Record<RaidKind, RaidOrder> {
+	return {
+		ram: "gate",
+		levy: "gate",
+		bowman: "gate",
+		knight: "wall",
+		beast: "gate",
+		catapult: "wall",
+		dragon: "wyrm",
+		ladder: "wall",
+		tower: "wall"
+	};
+}
+
+function atkOrderOf(raid, kind) {
+	if (raid.humanSide === "atk") return raid.orders?.[kind] ?? defaultOrders(raid.siege)[kind];
+	return defaultOrders(raid.siege)[kind];
+}
+
+function defOrderOf(raid, kind) {
+	if (raid.humanSide === "def") return raid.orders?.[kind] ?? defaultDefOrders()[kind];
+	return defaultDefOrders()[kind];
+}
+
+const LOT_KINDS: RaidKind[] = ["levy", "bowman", "knight", "beast", "dragon", "ram", "catapult", "ladder", "tower"];
+
+function emptyLots(side: BattleSide): Partial<Record<RaidKind, Partial<Record<RaidOrder, number>>>> {
+	const lots = {};
+	for (const kind of LOT_KINDS) {
+		const rows = ordersFor(side)[kind] ?? [];
+		if (!rows.length) continue;
+		lots[kind] = {};
+		for (const row of rows) lots[kind][row.id] = 0;
+	}
+	return lots;
+}
+
+function kindHeadcount(raid, kind) {
+	return stockKind(raid.stock, kind) + raid.units.filter((u) => u.side === raid.humanSide && u.kind === kind && u.hp > 0).length;
+}
+
+function placedByOrder(raid, kind) {
+	const tally: Partial<Record<RaidOrder, number>> = {};
+	for (const u of raid.units) {
+		if (u.side !== raid.humanSide || u.kind !== kind || u.hp <= 0) continue;
+		const id = u.held ? "hold" : (u.order || defOrderOf(raid, kind));
+		tally[id] = (tally[id] || 0) + 1;
+	}
+	return tally;
+}
+
+function seedOrderLots(raid) {
+	const lots = emptyLots(raid.humanSide);
+	const bag = raid.stock;
+	const defaults = raid.humanSide === "def" ? defaultDefOrders() : defaultOrders(raid.siege);
+	for (const kind of LOT_KINDS) {
+		const rows = ordersFor(raid.humanSide)[kind] ?? [];
+		if (!rows.length) continue;
+		const n = stockKind(bag, kind);
+		const home = raid.orders?.[kind] ?? defaults[kind];
+		if (lots[kind] && n > 0) lots[kind][home] = n;
+	}
+	raid.orderLots = lots;
+}
+
+export function orderLot(raid: RaidState, kind: RaidKind, order: RaidOrder): number {
+	return raid.orderLots?.[kind]?.[order] ?? 0;
+}
+
+function applyLotsToUnits(raid, kind) {
+	const side = raid.humanSide;
+	const allowed = (ordersFor(side)[kind] ?? []).map((r) => r.id);
+	const lots = raid.orderLots?.[kind] ?? {};
+	const units = raid.units.filter((u) => u.side === side && u.kind === kind && u.hp > 0);
+	let i = 0;
+	for (const id of allowed) {
+		const n = lots[id] ?? 0;
+		for (let k = 0; k < n && i < units.length; k++, i++) {
+			const u = units[i];
+			if (id === "hold") {
+				u.held = true;
+				if (u.order === "hold") u.order = combatOrder(kind, raid);
+			} else {
+				u.order = id;
+				u.held = false;
+			}
+			if (side === "def") u.holdGate = id === "gate";
+		}
+	}
+}
+
+export function setOrderLot(raid: RaidState, kind: RaidKind, order: RaidOrder, n: number) {
+	if (!raid.orderLots) seedOrderLots(raid);
+	const allowed = (ordersFor(raid.humanSide)[kind] ?? []).map((r) => r.id);
+	if (!allowed.includes(order)) return;
+	const total = kindHeadcount(raid, kind);
+	n = Math.max(0, Math.min(total, n | 0));
+	const lots = raid.orderLots[kind] ?? (raid.orderLots[kind] = {});
+	for (const id of allowed) if (lots[id] == null) lots[id] = 0;
+	const cur = lots[order] || 0;
+	let delta = n - cur;
+	lots[order] = n;
+	if (delta > 0) {
+		for (const id of [...allowed].reverse()) {
+			if (id === order || delta <= 0) continue;
+			const take = Math.min(lots[id] || 0, delta);
+			lots[id] -= take;
+			delta -= take;
+		}
+	} else if (delta < 0) {
+		const dest = allowed.find((id) => id !== order) ?? order;
+		lots[dest] = (lots[dest] || 0) - delta;
+	}
+	let sum = 0;
+	for (const id of allowed) sum += lots[id] || 0;
+	if (sum !== total) lots[order] = (lots[order] || 0) + (total - sum);
+	raid.orders[kind] = order;
+	rememberOrder(raid, kind, order);
+	applyLotsToUnits(raid, kind);
+}
+
+function takeLotOrder(raid, kind) {
+	const side = raid.humanSide;
+	const allowed = (ordersFor(side)[kind] ?? []).map((r) => r.id);
+	const lots = raid.orderLots?.[kind] ?? {};
+	const placed = placedByOrder(raid, kind);
+	const sel = raid.orders?.[kind];
+	if (sel && allowed.includes(sel)) {
+		if ((lots[sel] || 0) > (placed[sel] || 0)) return sel;
+		let donor = allowed.find((id) => id !== sel && (lots[id] || 0) > (placed[id] || 0));
+		if (!donor) donor = allowed.find((id) => id !== sel && (lots[id] || 0) > 0);
+		if (donor) {
+			lots[donor] = Math.max(0, (lots[donor] || 0) - 1);
+			lots[sel] = (lots[sel] || 0) + 1;
+		}
+		return sel;
+	}
+	for (const id of allowed) {
+		if ((lots[id] || 0) > (placed[id] || 0)) return id;
+	}
+	return side === "def" ? defaultDefOrders()[kind] : defaultOrders(raid.siege)[kind];
+}
+
+function attackerBag(raid) {
+	return raid.humanSide === "def" ? raid.atkStock : raid.stock;
+}
+
 function combatOrder(kind, raid) {
 const last = raid?.lastOrders?.[kind];
 if (last && last !== "hold") return last;
@@ -600,6 +887,7 @@ return {
 	force: { ...raid.force },
 	siege: { ...raid.siege },
 	stock: { ...raid.stock },
+	atkStock: { ...(raid.atkStock ?? raid.stock) },
 	deployed: { ...raid.deployed },
 	garrison: { ...raid.garrison },
 	units: raid.units.map((u) => ({
@@ -618,8 +906,12 @@ return {
 	beastStats: raid.beastStats ? { ...raid.beastStats } : null,
 	neighbors: (raid.neighbors ?? []).map((n) => ({ ...n })),
 	orders: { ...raid.orders ?? defaultOrders() },
+	orderLots: raid.orderLots
+		? Object.fromEntries(Object.entries(raid.orderLots).map(([k, v]) => [k, { ...v }]))
+		: emptyLots(raid.humanSide),
 	lastOrders: { ...raid.lastOrders ?? raid.orders ?? defaultOrders() },
 	wave: raid.wave ?? 0,
+	firstBreach: raid.firstBreach ? { ...raid.firstBreach } : null,
 	coastal: Boolean(raid.coastal),
 	worldX: raid.worldX,
 	worldY: raid.worldY
@@ -778,7 +1070,9 @@ raid.buildings.push({
 	flash: 0,
 	hostId: spec.hostId ?? null,
 	aimed: 0,
-	press: 0
+	press: 0,
+	gatePost: Boolean(spec.gatePost),
+	ring: spec.ring ?? null
 });
 }
 function spark(raid, x, y, n) {
@@ -811,8 +1105,8 @@ if (kind === "dragon") {
 	s.speed = 22 + p * 0.48;
 	s.range = 210 + p * 2.2;
 }
-const label = name ?? (kind === "beast" ? raid.beastName : kind === "ram" || kind === "catapult" || kind === "ladder" || kind === "tower" ? SIEGE_LABEL[kind] : UNIT_LABEL_PLURAL[kind]);
-const onWall = side === "def" && kind === "bowman";
+const label = name ?? (kind === "beast" ? (side === "def" ? raid.defBeastName ?? raid.beastName : raid.beastName) : kind === "ram" || kind === "catapult" || kind === "ladder" || kind === "tower" ? SIEGE_LABEL[kind] : UNIT_LABEL_PLURAL[kind]);
+const onWall = false;
 let pref = s.pref;
 if (side === "atk") {
 	if (raid.tactic === "keep") pref = "keep";
@@ -846,13 +1140,14 @@ return {
 	facing: Math.atan2(RAID_CY - y, RAID_CX - x),
 	postId: null,
 	holdGate: false,
-	order: side === "atk" ? (raid.orders?.[kind] ?? defaultOrders()[kind]) === "hold" ? combatOrder(kind, raid) : raid.orders?.[kind] ?? defaultOrders()[kind] : "gate",
-	held: side === "atk" && (raid.orders?.[kind] ?? "gate") === "hold",
+	gateRing: null,
+	order: side === "atk" ? (atkOrderOf(raid, kind) === "hold" ? combatOrder(kind, raid) : atkOrderOf(raid, kind)) : defOrderOf(raid, kind),
+	held: side === "atk" && atkOrderOf(raid, kind) === "hold",
 	file: 0,
 	aimed: 0
 };
 }
-export function openRaid(state: GameState, fromId: string, toId: string, force: HostForce, siege: SiegeStock, humanSide: BattleSide): RaidState | null {
+export function openRaid(state: GameState, fromId: string, toId: string, force: HostForce, siege: SiegeStock, humanSide: BattleSide, atkBeastHouse?: EmpireId): RaidState | null {
 const from = state.territories[fromId];
 const to = state.territories[toId];
 if (!from || !to) return null;
@@ -875,8 +1170,10 @@ const fromName = TERRITORY_BY_ID[fromId].name;
 const toName = TERRITORY_BY_ID[toId].name;
 const atkName = from.owner === "barbarian" ? "Tribes" : empireOf(state.players[from.owner].empire).name;
 const defName = to.owner === "barbarian" ? "Independent tribes" : empireOf(state.players[to.owner].empire).name;
-const atkBeast = from.owner === "barbarian" ? null : beastOf(state.players[from.owner].empire);
-const defBeast = to.owner === "barbarian" ? null : beastOf(state.players[to.owner].empire);
+const atkBeast = send.beasts > 0
+	? (atkBeastHouse || from.beastHouse ? beastOf(atkBeastHouse ?? from.beastHouse) : beastOfLand(fromId))
+	: from.owner === "barbarian" ? null : beastOf(state.players[from.owner].empire);
+const defBeast = (to.beasts ?? 0) > 0 ? beastOfTerritory(to) : to.owner === "barbarian" ? null : beastOf(state.players[to.owner].empire);
 const seed = state.seed + state.clock.turn * 997 + toId.length * 13 >>> 0;
 const watch = cityWatch(to);
 const atkPlayer = from.owner === "barbarian" ? null : state.players[from.owner];
@@ -888,7 +1185,20 @@ const raid = {
 	force: send,
 	siege: gear,
 	humanSide,
-	stock: {
+	stock: humanSide === "def"
+		? {
+			levy: to.levy + watch,
+			bowmen: to.bowmen ?? 0,
+			knights: to.knights,
+			dragons: to.dragons,
+			beasts: to.beasts ?? 0,
+			...EMPTY_SIEGE
+		}
+		: {
+			...send,
+			...gear
+		},
+	atkStock: {
 		...send,
 		...gear
 	},
@@ -931,6 +1241,8 @@ const raid = {
 	fromName,
 	toName,
 	beastName: atkBeast?.name ?? "Beasts",
+	defBeastName: defBeast?.name ?? "Beasts",
+	beastId: atkBeast?.id ?? null,
 	squash: .78,
 	moats: [],
 	bridges: [],
@@ -949,9 +1261,11 @@ const raid = {
 	keepRank: defenseRank(to, "keep-works"),
 	towerRank: defenseRank(to, "towers"),
 	tactic: "any",
-	orders: defaultOrders(gear),
-	lastOrders: defaultOrders(gear),
+	orders: humanSide === "def" ? defaultDefOrders() : defaultOrders(gear),
+	orderLots: {},
+	lastOrders: humanSide === "def" ? defaultDefOrders() : defaultOrders(gear),
 	wave: 0,
+	firstBreach: null,
 	coastal: Boolean(TERRITORY_BY_ID[toId]?.coastal),
 	worldX: TERRITORY_BY_ID[toId]?.labelX ?? RAID_CX,
 	worldY: TERRITORY_BY_ID[toId]?.labelY ?? RAID_CY,
@@ -972,12 +1286,14 @@ const raid = {
 };
 layoutVillage(raid, to);
 rebuildWalk(raid);
-spawnGarrison(raid, to, state);
+if (humanSide !== "def") spawnGarrison(raid, to, state);
+seedOrderLots(raid);
 raid.selected = raidKindsLeft(raid)[0] ?? null;
 const walls = defenseRank(to, "walls");
 if (defenseRank(to, "outer-walls") > 0) raid.log.push("Outer walls stand as the first ring.");
 else if (walls > 0) raid.log.push(`${walls >= 3 ? "High stone" : walls >= 2 ? "Stone walls" : "Wooden walls"} stand over the village.`);
-if (defenseRank(to, "keep-works") > 0) raid.log.push("A keep holds the last stores until the walls fall.");
+if (keepOf(raid)) raid.log.push("The keep must fall to take the land.");
+if (humanSide === "def") raid.log.push("Place the garrison inside the walls, then the assault begins.");
 if (defenseRank(to, "moats") > 0) raid.log.push("Moats slow the host and cut their blows.");
 if ((to.breach ?? 0) > 0) raid.log.push(`Catapults have already chewed the walls (${to.breach} hits).`);
 if (defenseRank(to, "scorpion") > 0) raid.log.push("Scorpions watch the sky.");
@@ -1054,24 +1370,30 @@ if (breach > 0) for (const w of raid.walls) {
 	w.hp = Math.max(1, w.hp - chip);
 }
 const tCounts = towerCounts(towers);
-placeEvenOnRing(raid, tCounts.inner, innerR - 2, "archer", sq, {
+const innerTowerSpec = {
 	r: 9,
 	hp: 140 + walls * 18,
 	range: 150 + walls * 8,
 	dmg: 5 + Math.min(4, walls),
 	cd: 0.95,
 	hitsGround: true,
-	hitsAir: false
-});
-placeEvenOnRing(raid, tCounts.outer, outerR - 2, "archer", sq, {
+	hitsAir: false,
+	ring: "inner"
+};
+const outerTowerSpec = {
 	r: 9,
 	hp: 130 + outer * 14,
 	range: 140 + outer * 6,
 	dmg: 4 + Math.min(3, outer),
 	cd: 1.0,
 	hitsGround: true,
-	hitsAir: false
-});
+	hitsAir: false,
+	ring: "outer"
+};
+if (outer > 0) placeGateTowers(raid, outerR - 2, "outer", sq, outerTowerSpec);
+if (walls > 0) placeGateTowers(raid, innerR - 2, "inner", sq, innerTowerSpec);
+placeEvenOnRing(raid, tCounts.inner, innerR - 2, "archer", sq, innerTowerSpec);
+placeEvenOnRing(raid, tCounts.outer, outerR - 2, "archer", sq, outerTowerSpec);
 const sCounts = scorpionCounts(scorp);
 const sRange = scorpionRangeFor(scorp);
 mountOnPosts(raid, sCounts.inner + sCounts.outer, "scorpion", {
@@ -1142,6 +1464,16 @@ function placeEvenOnRing(raid, n, radius, kind, squash, spec) {
 if (n < 1) return;
 for (const a of evenRingAngles(n)) addBuilding(raid, kind, RAID_CX + Math.cos(a) * radius, RAID_CY + Math.sin(a) * radius * squash, spec);
 }
+function placeGateTowers(raid, radius, ring, squash, spec) {
+for (const sign of [-1, 1]) {
+	const a = RAID_GATE_A + sign * RAID_GATE_TOWER_DA;
+	addBuilding(raid, "archer", RAID_CX + Math.cos(a) * radius, RAID_CY + Math.sin(a) * radius * squash, {
+		...spec,
+		gatePost: true,
+		ring
+	});
+}
+}
 function mountOnPosts(raid, n, kind, spec) {
 if (n < 1) return;
 const posts = raid.buildings.filter((b) => b.kind === "archer" && b.hp > 0);
@@ -1160,16 +1492,29 @@ const keep = keepOf(raid);
 const posts = raid.buildings.filter((b) => b.kind === "archer" && b.hp > 0);
 const keepBonus = raid.keepRank >= 1 || (to.fort ?? to.castleRank ?? 0) >= 3;
 const bowmen = Math.min(UNIT_CAP.bowman, to.bowmen ?? 0);
-const perPost = 2;
-const wallSlots = posts.length * perPost;
+const outerGate = posts.filter((b) => b.gatePost && b.ring === "outer");
+const innerGate = posts.filter((b) => b.gatePost && b.ring === "inner");
+const firstGate = outerGate.length ? outerGate : innerGate;
+const secondGate = outerGate.length ? innerGate : [];
+const restPosts = posts.filter((b) => !b.gatePost);
+const slots = [];
+const fill = (list, per) => {
+	for (let k = 0; k < per; k++) for (const p of list) slots.push({
+		post: p,
+		k
+	});
+};
+fill(firstGate, 2);
+fill(secondGate, 2);
+fill(restPosts, 2);
 for (let i = 0; i < bowmen; i++) {
 	let x;
 	let y;
 	let postId = null;
 	let wall = false;
-	if (posts.length && i < wallSlots) {
-		const tw = posts[i % posts.length];
-		const k = Math.floor(i / posts.length);
+	if (i < slots.length) {
+		const tw = slots[i].post;
+		const k = slots[i].k;
 		const out = Math.atan2(tw.y - RAID_CY, tw.x - RAID_CX);
 		x = tw.x + Math.cos(out + (k - 0.4) * 0.5) * 7;
 		y = tw.y + Math.sin(out + (k - 0.4) * 0.5) * 5;
@@ -1182,7 +1527,7 @@ for (let i = 0; i < bowmen; i++) {
 		postId = keep.id;
 		wall = true;
 	} else if (keep) {
-		const extra = i - wallSlots;
+		const extra = i - slots.length;
 		const cols = 10;
 		const a = RAID_GATE_A + ((extra % cols) - (cols - 1) / 2) * 0.16;
 		const ring = 1 + Math.floor(extra / cols);
@@ -1213,33 +1558,53 @@ for (let i = 0; i < bowmen; i++) {
 	}
 	raid.units.push(u);
 }
-const beastName = to.owner === "barbarian" ? "Beasts" : beastOf(state.players[to.owner].empire).name;
-clusterAtGate(raid, "levy", Math.min(UNIT_CAP.levy, to.levy));
-clusterAtGate(raid, "knight", Math.min(UNIT_CAP.knight, to.knights));
-clusterAtGate(raid, "beast", Math.min(UNIT_CAP.beast, to.beasts ?? 0), beastName);
-for (let i = 0; i < Math.min(UNIT_CAP.dragon, to.dragons); i++) raid.units.push(makeUnit(raid, "def", "dragon", RAID_CX + 70, RAID_CY - 90));
+const beastName = (to.beasts ?? 0) > 0 ? beastOfTerritory(to).name : "Beasts";
+clusterAtGates(raid, "levy", Math.min(UNIT_CAP.levy, to.levy));
+placeAroundCity(raid, "knight", Math.min(UNIT_CAP.knight, to.knights), undefined, defOrderOf(raid, "knight") === "gate");
+clusterAtGates(raid, "beast", Math.min(UNIT_CAP.beast, to.beasts ?? 0), beastName);
+const drakes = Math.min(UNIT_CAP.dragon, to.dragons);
+const dx = keep?.x ?? RAID_CX;
+const dy = keep?.y ?? RAID_CY;
+for (let i = 0; i < drakes; i++) {
+	const a = ((i + 0.5) / drakes) * Math.PI * 2;
+	raid.units.push(makeUnit(raid, "def", "dragon", dx + Math.cos(a) * 10, dy + Math.sin(a) * 8));
+}
+}
+function orderedGates(raid) {
+const gates = raid.walls.filter((w) => w.gate);
+const outer = gates.filter((w) => w.ring === "outer");
+const inner = gates.filter((w) => w.ring !== "outer");
+return [...outer, ...inner];
+}
+function musterOfWall(w) {
+const c = wallCenter(w);
+const a = Math.atan2(RAID_CY - c.y, RAID_CX - c.x);
+return {
+	x: c.x + Math.cos(a) * 22,
+	y: c.y + Math.sin(a) * 17,
+	a,
+	ring: w.ring
+};
 }
 function gateMuster(raid) {
-const g = raid.walls.find((w) => w.gate) ?? null;
-if (g) {
-	const c = wallCenter(g);
-	const a = Math.atan2(RAID_CY - c.y, RAID_CX - c.x);
-	return {
-		x: c.x + Math.cos(a) * 18,
-		y: c.y + Math.sin(a) * 12,
-		a
-	};
-}
+const g = orderedGates(raid)[0] ?? raid.walls.find((w) => w.gate) ?? null;
+if (g) return musterOfWall(g);
 return {
 	x: RAID_CX,
 	y: RAID_CY + (raid.camp ? 26 : 40),
-	a: -Math.PI / 2
+	a: -Math.PI / 2,
+	ring: null
 };
 }
-function clusterAtGate(raid, kind, n, name) {
+function assignedMuster(raid, u) {
+const gates = orderedGates(raid);
+const match = u.gateRing ? gates.find((g) => g.ring === u.gateRing) : null;
+const w = match ?? gates[0] ?? null;
+if (w) return musterOfWall(w);
+return gateMuster(raid);
+}
+function placeCluster(raid, kind, n, g, name, hold) {
 if (n < 1) return;
-const g = gateMuster(raid);
-const huntN = Math.ceil(n / 2);
 const alongA = g.a + Math.PI / 2;
 const packed = n > 8;
 const cols = packed ? Math.max(1, Math.ceil(Math.sqrt(n))) : n;
@@ -1253,13 +1618,292 @@ for (let i = 0; i < n; i++) {
 	const x = g.x + Math.cos(alongA) * along + Math.cos(g.a) * inward;
 	const y = g.y + Math.sin(alongA) * along * 0.72 + Math.sin(g.a) * inward * 0.72;
 	const u = makeUnit(raid, "def", kind, x, y, name);
-	u.holdGate = i >= huntN;
+	u.holdGate = hold;
+	u.gateRing = g.ring ?? null;
+	nudgeInside(raid, u);
 	raid.units.push(u);
 }
+}
+function nudgeInside(raid, u) {
+if (u.air || u.onWall) return;
+for (let k = 0; k < 10; k++) {
+	if (walkableFor(raid, u.x, u.y, u)) return;
+	const a = Math.atan2(RAID_CY - u.y, RAID_CX - u.x);
+	u.x += Math.cos(a) * 6;
+	u.y += Math.sin(a) * 5;
+}
+}
+function placeAroundCity(raid, kind, n, name, hold = false) {
+if (n < 1) return;
+const keep = keepOf(raid);
+const r = (keep?.r ?? 42) + 36;
+for (let i = 0; i < n; i++) {
+	const a = RAID_GATE_A + ((i + 0.5) / n) * Math.PI * 2;
+	const x = RAID_CX + Math.cos(a) * r;
+	const y = RAID_CY + Math.sin(a) * r * (raid.squash || 0.78);
+	const u = makeUnit(raid, "def", kind, x, y, name);
+	u.holdGate = hold;
+	u.gateRing = null;
+	nudgeInside(raid, u);
+	raid.units.push(u);
+}
+}
+function clusterAtGates(raid, kind, n, name) {
+if (n < 1) return;
+const gates = orderedGates(raid);
+const musters = gates.length ? gates.map(musterOfWall) : [gateMuster(raid)];
+const first = musters[0];
+const second = musters[1] ?? null;
+if (kind === "beast") {
+	const n1 = Math.min(BEAST_GATE, n);
+	placeCluster(raid, kind, n1, first, name, true);
+	let left = n - n1;
+	if (second && left > 0) {
+		const n2 = Math.min(BEAST_GATE, left);
+		placeCluster(raid, kind, n2, second, name, true);
+		left -= n2;
+	}
+	if (left > 0) placeAroundCity(raid, kind, left, name);
+	return;
+}
+const n1 = Math.min(GATE_WATCH, n);
+placeCluster(raid, kind, n1, first, name, true);
+const left = n - n1;
+if (left > 0) placeCluster(raid, kind, left, second ?? first, name, true);
+}
+function placeAtKeep(raid, kind, n, name) {
+	if (n < 1) return;
+	const keep = keepOf(raid);
+	const r = (keep?.r ?? 42) + 20;
+	for (let i = 0; i < n; i++) {
+		const a = RAID_GATE_A + Math.PI + ((i + 0.5) / Math.max(1, n)) * Math.PI * 1.5 - 0.75;
+		const x = RAID_CX + Math.cos(a) * r;
+		const y = RAID_CY + Math.sin(a) * r * (raid.squash || 0.78);
+		const u = makeUnit(raid, "def", kind, x, y, name);
+		u.holdGate = false;
+		u.order = "keep";
+		nudgeInside(raid, u);
+		raid.units.push(u);
+	}
+}
+function bowmanSlots(raid) {
+	const keep = keepOf(raid);
+	const posts = raid.buildings.filter((b) => b.kind === "archer" && b.hp > 0);
+	const outerGate = posts.filter((b) => b.gatePost && b.ring === "outer");
+	const innerGate = posts.filter((b) => b.gatePost && b.ring === "inner");
+	const firstGate = outerGate.length ? outerGate : innerGate;
+	const secondGate = outerGate.length ? innerGate : [];
+	const restPosts = posts.filter((b) => !b.gatePost);
+	const slots = [];
+	const fill = (list, per) => {
+		for (let k = 0; k < per; k++) for (const p of list) slots.push({ post: p, k });
+	};
+	fill(firstGate, 2);
+	fill(secondGate, 2);
+	fill(restPosts, 2);
+	return { slots, keep, posts };
+}
+function stationBowmen(raid, n, order) {
+	if (n < 1) return;
+	const { slots, keep } = bowmanSlots(raid);
+	const used = new Set(raid.units.filter((u) => u.side === "def" && u.kind === "bowman" && u.postId).map((u) => `${u.postId}:${Math.round(u.x)}:${Math.round(u.y)}`));
+	const free = slots.filter((s) => !used.has(`${s.post.id}:${Math.round(s.post.x)}:${Math.round(s.post.y)}`));
+	let pool = free;
+	if (order === "keep") {
+		const keepSlots = free.filter((s) => s.post.kind === "keep" || s.post.ring === "keep" || (keep && dist(s.post.x, s.post.y, keep.x, keep.y) < (keep.r ?? 42) + 36));
+		pool = keepSlots.length ? keepSlots.concat(free.filter((s) => !keepSlots.includes(s))) : free;
+	} else if (order === "wall") {
+		const rest = free.filter((s) => !s.post.gatePost);
+		pool = rest.length ? rest.concat(free.filter((s) => s.post.gatePost)) : free;
+	}
+	for (let i = 0; i < n; i++) {
+		let x;
+		let y;
+		let postId = null;
+		let wall = false;
+		if (i < pool.length) {
+			const tw = pool[i].post;
+			const k = pool[i].k;
+			const out = Math.atan2(tw.y - RAID_CY, tw.x - RAID_CX);
+			x = tw.x + Math.cos(out + (k - 0.4) * 0.5) * 7;
+			y = tw.y + Math.sin(out + (k - 0.4) * 0.5) * 5;
+			postId = tw.id;
+			wall = true;
+		} else if (order === "keep" && keep) {
+			const extra = i - pool.length;
+			const a = extra / Math.max(1, n) * Math.PI * 2;
+			x = keep.x + Math.cos(a) * (keep.r + 10);
+			y = keep.y + Math.sin(a) * (keep.r + 8);
+			postId = keep.id;
+			wall = true;
+		} else if (keep) {
+			const extra = i - pool.length;
+			const cols = 10;
+			const a = RAID_GATE_A + ((extra % cols) - (cols - 1) / 2) * 0.16;
+			const ring = 1 + Math.floor(extra / cols);
+			x = keep.x + Math.cos(a) * (keep.r + 8 + ring * 8);
+			y = keep.y + Math.sin(a) * (keep.r + 6 + ring * 6);
+		} else {
+			const muster = gateMuster(raid);
+			x = muster.x;
+			y = muster.y;
+		}
+		const u = makeUnit(raid, "def", "bowman", x, y);
+		u.postId = postId;
+		u.onWall = wall;
+		u.order = order;
+		u.holdGate = order === "gate";
+		if (wall) {
+			u.speed = 0;
+			u.range = STATS.bowman.range + WALL_BOW_RANGE;
+			u.dmg = STATS.bowman.dmg + WALL_BOW_DMG;
+			u.facing = postId && keep && postId === keep.id ? RAID_GATE_A : Math.atan2(y - RAID_CY, x - RAID_CX);
+		}
+		raid.units.push(u);
+	}
+}
+function spawnDefGroup(raid, kind, n, order, name) {
+	if (n < 1) return;
+	const prev = raid.orders[kind];
+	raid.orders[kind] = order;
+	if (kind === "bowman") stationBowmen(raid, n, order);
+	else if (kind === "dragon") {
+		const keep = keepOf(raid);
+		const g = gateMuster(raid);
+		for (let i = 0; i < n; i++) {
+			let x;
+			let y;
+			if (order === "gate") {
+				x = g.x + (i - (n - 1) / 2) * 10;
+				y = g.y - 14;
+			} else if (order === "wall") {
+				const a = RAID_GATE_A + ((i + 0.5) / n) * Math.PI * 2;
+				const r = (keep?.r ?? 42) + 36;
+				x = RAID_CX + Math.cos(a) * r;
+				y = RAID_CY + Math.sin(a) * r * (raid.squash || 0.78);
+			} else {
+				const a = ((i + 0.5) / n) * Math.PI * 2;
+				x = (keep?.x ?? RAID_CX) + Math.cos(a) * 10;
+				y = (keep?.y ?? RAID_CY) + Math.sin(a) * 8;
+			}
+			const u = makeUnit(raid, "def", "dragon", x, y);
+			u.order = order;
+			raid.units.push(u);
+		}
+	} else if (order === "keep") placeAtKeep(raid, kind, n, name);
+	else if (order === "wall") placeAroundCity(raid, kind, n, name, false);
+	else clusterAtGates(raid, kind, n, name);
+	raid.orders[kind] = prev;
+	const born = raid.units.filter((u) => u.side === "def" && u.kind === kind);
+	const tail = born.slice(Math.max(0, born.length - n));
+	for (const u of tail) {
+		u.order = order;
+		u.holdGate = order === "gate";
+	}
+}
+export function autoDeployDef(raid: RaidState) {
+	if (raid.humanSide !== "def" || raid.phase === "over") return;
+	const name = raid.defBeastName ?? "Beasts";
+	for (const kind of ["bowman", "levy", "knight", "beast", "dragon"]) {
+		const allowed = ordersFor("def")[kind] ?? [];
+		for (const row of allowed) {
+			const need = Math.max(0, (raid.orderLots?.[kind]?.[row.id] || 0) - (placedByOrder(raid, kind)[row.id] || 0));
+			const n = Math.min(need, stockKind(raid.stock, kind), UNIT_CAP[kind] ?? 99);
+			if (n < 1) continue;
+			spawnDefGroup(raid, kind, n, row.id, kind === "beast" ? name : undefined);
+			takeStock(raid.stock, kind, n);
+		}
+		const left = Math.min(stockKind(raid.stock, kind), UNIT_CAP[kind] ?? 99);
+		if (left > 0) {
+			const order = raid.orders[kind] ?? defaultDefOrders()[kind];
+			spawnDefGroup(raid, kind, left, order, kind === "beast" ? name : undefined);
+			takeStock(raid.stock, kind, left);
+		}
+	}
+	const remain = raidKindsLeft(raid);
+	if (raid.selected && stockKind(raid.stock, raid.selected) < 1) raid.selected = remain[0] ?? null;
 }
 function wallsBreached(raid) {
 if (raid.camp || raid.walls.length < 1) return true;
 return raid.walls.some((w) => w.hp <= 0 || w.climb);
+}
+function ringOpen(raid) {
+if (raid.camp || raid.walls.length < 1) return true;
+return raid.walls.every((w) => w.hp <= 0 || w.climb);
+}
+function wallHoleElsewhere(raid) {
+return raid.walls.some((w) => !w.gate && (w.hp <= 0 || w.climb));
+}
+function insideOfWall(w) {
+const c = wallCenter(w);
+const a = Math.atan2(RAID_CY - c.y, RAID_CX - c.x);
+return {
+	id: w.id,
+	x: c.x + Math.cos(a) * 16,
+	y: c.y + Math.sin(a) * 12,
+	gate: Boolean(w.gate)
+};
+}
+function noteBreach(raid, w) {
+if (raid.firstBreach) return;
+if (!(w.hp <= 0 || w.climb)) return;
+raid.firstBreach = insideOfWall(w);
+}
+function firstBreachPoint(raid) {
+if (raid.firstBreach) {
+	const w = raid.walls.find((x) => x.id === raid.firstBreach.id);
+	if (w && (w.hp <= 0 || w.climb)) return insideOfWall(w);
+	return raid.firstBreach;
+}
+const hole = raid.walls.find((w) => w.hp <= 0 || w.climb);
+return hole ? insideOfWall(hole) : null;
+}
+function largestAtkGroup(raid) {
+const foes = livingAtk(raid).filter((f) => f.hp > 0 && !f.air);
+if (!foes.length) return null;
+const sites = [];
+for (const w of raid.walls) {
+	if (w.gate || w.hp <= 0 || w.climb) sites.push(wallCenter(w));
+}
+if (!sites.length) {
+	const g = gateMuster(raid);
+	sites.push({ x: g.x, y: g.y });
+}
+let best = null;
+let bestN = 0;
+for (const s of sites) {
+	const cluster = foes.filter((f) => dist(f.x, f.y, s.x, s.y) < 82);
+	if (cluster.length > bestN) {
+		bestN = cluster.length;
+		best = cluster;
+	}
+}
+if (!best || !best.length) return foes[0];
+return [...best].sort((a, b) => dist(a.x, a.y, RAID_CX, RAID_CY) - dist(b.x, b.y, RAID_CX, RAID_CY))[0];
+}
+function gateDestroyed(raid) {
+return raid.walls.some((w) => w.gate && w.hp <= 0);
+}
+function breachInside(raid, x, y) {
+let best = null;
+let bestD = 1e9;
+for (const w of raid.walls) {
+	if (w.gate) continue;
+	if (!(w.hp <= 0 || w.climb)) continue;
+	const c = wallCenter(w);
+	const a = Math.atan2(RAID_CY - c.y, RAID_CX - c.x);
+	const px = c.x + Math.cos(a) * 16;
+	const py = c.y + Math.sin(a) * 12;
+	const d = dist(x, y, px, py);
+	if (d < bestD) {
+		bestD = d;
+		best = {
+			x: px,
+			y: py
+		};
+	}
+}
+return best;
 }
 function ringDist(raid, x, y) {
 const dx = x - RAID_CX;
@@ -1285,17 +1929,7 @@ if (raid.wallRank > 0) return 124 + raid.wallRank * 5 + 16;
 return 86;
 }
 export function cityArtId(raid: RaidState): CityArtId {
-if (raid.camp || raid.wallRank <= 0 && raid.outerWallRank <= 0) return "camp";
-const moat = raid.moatRank;
-const outer = raid.outerWallRank;
-const walls = raid.wallRank;
-if (moat >= 3) return "ring";
-if (moat >= 2) return "moat2";
-if (moat >= 1) return outer > 0 ? "moat2" : "moat1";
-if (outer >= 1) return "outer";
-if (walls >= 3) return "high";
-if (walls >= 2) return "stone";
-return "wood";
+  return cityArtForRanks(raid.wallRank, raid.outerWallRank, raid.moatRank, raid.camp);
 }
 export function raidBattleStatus(raid: RaidState): RaidBattleStatus {
 const gates = raid.walls.filter((w) => w.gate);
@@ -1335,6 +1969,52 @@ return {
 	towersTotal
 };
 }
+const ARMY_HP_KINDS = ["levy", "bowman", "knight", "beast", "dragon", "ram", "catapult", "ladder", "tower"];
+function unitSpecHp(raid, side, kind) {
+	if (kind === "beast" && raid.beastStats) return Math.round(raid.beastStats.health * 4.8);
+	if (kind === "dragon") {
+		const p = side === "atk" ? raid.atkDragon : raid.defDragon;
+		return Math.round(p * 16);
+	}
+	return STATS[kind]?.hp ?? 0;
+}
+function bagHp(raid, bag, side) {
+	if (!bag) return 0;
+	let n = 0;
+	for (const kind of ARMY_HP_KINDS) n += (stockKind(bag, kind) | 0) * unitSpecHp(raid, side, kind);
+	return n;
+}
+export function raidArmyHp(raid: RaidState): RaidArmyHp {
+	let atkCur = 0;
+	let atkMax = 0;
+	let defCur = 0;
+	let defMax = 0;
+	for (const u of raid.units) {
+		const cur = Math.max(0, u.hp);
+		const max = Math.max(0, u.max);
+		const cargoMax = bagHp(raid, u.cargo, u.side);
+		const cargoCur = u.hp > 0 ? cargoMax : 0;
+		if (u.side === "atk") {
+			atkCur += cur + cargoCur;
+			atkMax += max + cargoMax;
+		} else {
+			defCur += cur + cargoCur;
+			defMax += max + cargoMax;
+		}
+	}
+	const atkLeft = bagHp(raid, attackerBag(raid), "atk");
+	atkCur += atkLeft;
+	atkMax += atkLeft;
+	if (raid.humanSide === "def") {
+		const defLeft = bagHp(raid, raid.stock, "def");
+		defCur += defLeft;
+		defMax += defLeft;
+	}
+	return {
+		atk: { cur: atkCur, max: atkMax },
+		def: { cur: defCur, max: defMax }
+	};
+}
 function villageInner(x, y, raid) {
 if (ringDist(raid, x, y) < cityRadius(raid)) return true;
 const box = wallBox(raid);
@@ -1344,37 +2024,125 @@ return false;
 export function canDeployAt(raid: RaidState, x: number, y: number): boolean {
 if (raid.phase === "over") return false;
 if (x < 18 || y < 18 || x > 702 || y > 462) return false;
+if (raid.humanSide === "def") return canDeployDefAt(raid, x, y, raid.selected);
+return canDeployAtkAt(raid, x, y);
+}
+function canDeployAtkAt(raid, x, y) {
+if (x < 18 || y < 18 || x > 702 || y > 462) return false;
 if (villageInner(x, y, raid)) return false;
 for (const b of raid.buildings) if (b.hp > 0 && dist(x, y, b.x, b.y) < b.r + 10) return false;
 return true;
 }
-export function deployTroop(raid: RaidState, kind: RaidKind, x: number, y: number): boolean {
+function canDeployDefAt(raid, x, y, kind) {
+if (!villageInner(x, y, raid)) {
+	if (kind === "dragon") {
+		const r = cityRadius(raid) + 28;
+		return dist(x, y, RAID_CX, RAID_CY) < r;
+	}
+	return false;
+}
+for (const b of raid.buildings) {
+	if (b.hp <= 0) continue;
+	if (kind === "bowman" && (b.kind === "archer" || b.kind === "keep") && dist(x, y, b.x, b.y) < b.r + 22) return true;
+	if (b.kind === "keep" && dist(x, y, b.x, b.y) < b.r + 8) return false;
+	if (b.kind !== "archer" && b.kind !== "keep" && dist(x, y, b.x, b.y) < b.r + 8) return false;
+}
+return true;
+}
+function nearestDefPost(raid, x, y) {
+let best = null;
+let bestD = 24;
+for (const b of raid.buildings) {
+	if (b.hp <= 0) continue;
+	if (b.kind !== "archer" && b.kind !== "keep") continue;
+	const d = dist(x, y, b.x, b.y);
+	if (d < bestD) {
+		bestD = d;
+		best = b;
+	}
+}
+return best;
+}
+export function deployTroop(raid: RaidState, kind: RaidKind, x: number, y: number, side?: BattleSide): boolean {
 if (raid.phase === "over") return false;
-if (stockKind(raid.stock, kind) < 1) return false;
+const who = side ?? raid.humanSide;
+if (who === "def") return deployDefender(raid, kind, x, y);
+const bag = attackerBag(raid);
+if (stockKind(bag, kind) < 1) return false;
 if (isBoardable(kind)) {
 	const tower = towerNear(raid, x, y);
 	if (tower && boardTower(raid, tower, kind)) return true;
 }
-if (!canDeployAt(raid, x, y)) return false;
+if (!canDeployAtkAt(raid, x, y)) return false;
 const jitter = () => (nextRng(raid) - .5) * 8;
 let px = clamp(x + jitter(), 16, 704);
 let py = clamp(y + jitter(), 16, 464);
-if (!canDeployAt(raid, px, py)) {
+if (!canDeployAtkAt(raid, px, py)) {
 	px = clamp(x, 16, 704);
 	py = clamp(y, 16, 464);
-	if (!canDeployAt(raid, px, py)) return false;
+	if (!canDeployAtkAt(raid, px, py)) return false;
 }
+const order = raid.humanSide === "atk" ? takeLotOrder(raid, kind) : atkOrderOf(raid, kind);
 const u = makeUnit(raid, "atk", kind, px, py);
+if (order === "hold") {
+	u.held = true;
+	u.order = combatOrder(kind, raid);
+} else {
+	u.order = order;
+	u.held = false;
+}
 if (kind === "tower") u.cargo = loadTowerCargo(raid);
 raid.units.push(u);
-takeStock(raid.stock, kind);
+takeStock(bag, kind);
 addStock(raid.deployed, kind);
+if (raid.humanSide === "atk") {
+	const left = raidKindsLeft(raid);
+	if (raid.selected && stockKind(raid.stock, raid.selected) < 1) raid.selected = left[0] ?? null;
+}
+return true;
+}
+function deployDefender(raid, kind, x, y) {
+if (stockKind(raid.stock, kind) < 1) return false;
+if (kind === "ram" || kind === "catapult" || kind === "ladder" || kind === "tower") return false;
+if (!canDeployDefAt(raid, x, y, kind)) return false;
+const order = takeLotOrder(raid, kind);
+const jitter = () => (nextRng(raid) - .5) * 6;
+let px = clamp(x + jitter(), 16, 704);
+let py = clamp(y + jitter(), 16, 464);
+if (!canDeployDefAt(raid, px, py, kind)) {
+	px = clamp(x, 16, 704);
+	py = clamp(y, 16, 464);
+}
+const u = makeUnit(raid, "def", kind, px, py, kind === "beast" ? raid.defBeastName : undefined);
+u.order = order;
+u.holdGate = order === "gate";
+if (kind === "bowman") {
+	const post = nearestDefPost(raid, x, y);
+	if (post) {
+		const out = Math.atan2(post.y - RAID_CY, post.x - RAID_CX);
+		u.x = post.x + Math.cos(out) * 7;
+		u.y = post.y + Math.sin(out) * 5;
+		u.postId = post.id;
+		u.onWall = true;
+		u.speed = 0;
+		u.range = STATS.bowman.range + WALL_BOW_RANGE;
+		u.dmg = STATS.bowman.dmg + WALL_BOW_DMG;
+		u.facing = Math.atan2(u.y - RAID_CY, u.x - RAID_CX);
+	}
+}
+nudgeInside(raid, u);
+raid.units.push(u);
+takeStock(raid.stock, kind);
 const left = raidKindsLeft(raid);
 if (raid.selected && stockKind(raid.stock, raid.selected) < 1) raid.selected = left[0] ?? null;
 return true;
 }
 export function beginAssault(raid: RaidState): boolean {
 if (raid.phase !== "deploy") return false;
+if (raid.humanSide === "def") {
+	autoDeployDef(raid);
+	if (!raid.units.some((u) => u.side === "atk" && u.hp > 0)) autoDeployAll(raid);
+}
 if (!raid.units.some((u) => u.side === "atk" && u.hp > 0)) return false;
 if (!raid.units.some((u) => u.side === "atk" && u.hp > 0 && !u.held)) {
 	for (const u of raid.units) if (u.side === "atk" && u.hp > 0) releaseHold(u, raid);
@@ -1403,12 +2171,13 @@ return true;
 }
 function loadTowerCargo(raid) {
 const cargo = { ...EMPTY_HOST };
-const want = (kind) => (raid.orders?.[kind] ?? defaultOrders()[kind]) === "tower";
+const bag = attackerBag(raid);
+const want = (kind) => atkOrderOf(raid, kind) === "tower";
 const take = (kind, cap) => {
 	if (!want(kind)) return 0;
-	const n = Math.min(cap, stockKind(raid.stock, kind));
+	const n = Math.min(cap, stockKind(bag, kind));
 	if (n < 1) return 0;
-	takeStock(raid.stock, kind, n);
+	takeStock(bag, kind, n);
 	addStock(raid.deployed, kind, n);
 	return n;
 };
@@ -1462,10 +2231,10 @@ return best;
 export function boardTower(raid: RaidState, tower: RaidUnit, kind: RaidKind): boolean {
 if (!tower || tower.kind !== "tower" || tower.dumped || tower.hp <= 0) return false;
 if (!isBoardable(kind)) return false;
-if (stockKind(raid.stock, kind) < 1) return false;
+if (stockKind(attackerBag(raid), kind) < 1) return false;
 if (!tower.cargo) tower.cargo = { ...EMPTY_HOST };
 if (cargoHeld(tower.cargo, kind) >= cargoCap(kind)) return false;
-takeStock(raid.stock, kind);
+takeStock(attackerBag(raid), kind);
 addStock(raid.deployed, kind);
 addCargo(tower.cargo, kind, 1);
 const left = raidKindsLeft(raid);
@@ -1484,14 +2253,20 @@ export function pickRaidKind(raid: RaidState, kind: RaidKind) {
 if (stockKind(raid.stock, kind) > 0) raid.selected = kind;
 }
 export function setRaidOrder(raid: RaidState, kind: RaidKind, order: RaidOrder) {
-if (!raid.orders) raid.orders = defaultOrders();
+if (!raid.orders) raid.orders = raid.humanSide === "def" ? defaultDefOrders() : defaultOrders();
 if (!raid.lastOrders) raid.lastOrders = { ...raid.orders };
-const allowed = KIND_ORDERS[kind] ?? [];
+const allowed = ordersFor(raid.humanSide)[kind] ?? [];
 if (!allowed.some((row) => row.id === order)) return;
 raid.orders[kind] = order;
 rememberOrder(raid, kind, order);
+if (raid.phase === "deploy") {
+	pickRaidKind(raid, kind);
+	const row = allowed.find((o) => o.id === order);
+	if (row) raid.log.push(`${kind === "beast" ? (raid.humanSide === "def" ? raid.defBeastName : raid.beastName) : kind === "levy" ? "Warriors" : kind === "bowman" ? "Archers" : kind === "knight" ? "Knights" : SIEGE_LABEL[kind] ?? UNIT_LABEL_PLURAL[kind] ?? kind} will ${row.label.toLowerCase()}.`);
+	return;
+}
 for (const u of raid.units) {
-	if (u.side !== "atk" || u.kind !== kind || u.planted) continue;
+	if (u.side !== raid.humanSide || u.kind !== kind || u.planted) continue;
 	if (order === "hold") {
 		u.held = true;
 		if (u.order === "hold") u.order = combatOrder(kind, raid);
@@ -1499,6 +2274,7 @@ for (const u of raid.units) {
 		u.order = order;
 		u.held = false;
 	}
+	if (u.side === "def") u.holdGate = order === "gate";
 }
 const row = allowed.find((o) => o.id === order);
 if (row) raid.log.push(`${kind === "beast" ? raid.beastName : kind === "levy" ? "Warriors" : kind === "bowman" ? "Archers" : kind === "knight" ? "Knights" : SIEGE_LABEL[kind] ?? UNIT_LABEL_PLURAL[kind] ?? kind} ordered: ${row.label.toLowerCase()}.`);
@@ -1512,17 +2288,18 @@ for (let extra = 0; extra <= 90; extra += 10) {
 		const a = angle + i * .12 * (i % 2 ? -1 : 1);
 		const x = clamp(RAID_CX + Math.cos(a) * reach, 24, 696);
 		const y = clamp(RAID_CY + Math.sin(a) * reach * (raid.squash || .78), 24, 456);
-		if (canDeployAt(raid, x, y)) return { x, y };
+		if (canDeployAtkAt(raid, x, y)) return { x, y };
 	}
 }
 for (let y = 448; y >= 24; y -= 14) {
 	for (let x = 36; x <= 684; x += 14) {
-		if (canDeployAt(raid, x, y)) return { x, y };
+		if (canDeployAtkAt(raid, x, y)) return { x, y };
 	}
 }
 return null;
 }
 export function autoDeployAll(raid: RaidState) {
+const bag = attackerBag(raid);
 const gateA = RAID_GATE_A;
 let n = 0;
 const cap = UNIT_CAP.levy + UNIT_CAP.bowman + UNIT_CAP.knight + UNIT_CAP.beast + UNIT_CAP.dragon + SIEGE_CAP * 4;
@@ -1540,8 +2317,8 @@ for (const kind of [
 ]) {
 let k = 0;
 let fails = 0;
-while (stockKind(raid.stock, kind) > 0) {
-	if (isBoardable(kind) && (raid.orders?.[kind] ?? defaultOrders()[kind]) === "tower") {
+while (stockKind(bag, kind) > 0) {
+	if (isBoardable(kind) && atkOrderOf(raid, kind) === "tower") {
 		const tower = towerWithRoom(raid, kind);
 		if (tower && boardTower(raid, tower, kind)) {
 			n += 1;
@@ -1579,7 +2356,7 @@ while (stockKind(raid.stock, kind) > 0) {
 		reach = Math.max(198, minReach + 24);
 	}
 	const p = placeOnRing(raid, angle, reach);
-	if (!p || !deployTroop(raid, kind, p.x, p.y)) {
+	if (!p || !deployTroop(raid, kind, p.x, p.y, "atk")) {
 		fails += 1;
 		k += 1;
 		if (fails > 14) break;
@@ -1667,6 +2444,7 @@ spark(raid, w.x + w.w / 2, w.y + w.h / 2, 4);
 raid.trauma = Math.min(1, raid.trauma + .1);
 if (w.hp <= 0 && was > 0) {
 	raid.walkDirty = true;
+	noteBreach(raid, w);
 	if (w.gate) pushAlert(raid, "gate", w.ring === "outer" ? "The outer gate is destroyed." : "The gate is destroyed.");
 	else pushAlert(raid, "wall", "The wall is breached.");
 }
@@ -1783,6 +2561,7 @@ if (u.kind === "ladder") {
 		w.climb = true;
 		u.planted = true;
 		raid.walkDirty = true;
+		noteBreach(raid, w);
 		raid.log.push("Ladders bite the wall — the host can scale without breaking it.");
 		raid.trauma = Math.min(1, raid.trauma + .12);
 	}
@@ -1847,7 +2626,7 @@ if (u.kind === "knight" || u.kind === "levy") {
 	const gate = nearestGate(raid, u.x, u.y);
 	if (gate && inRangeW(u, gate, raid)) {
 		gate.press = (gate.press || 0) + 1;
-		if (gate.press <= 8) hurtWall(raid, gate, u.dmg * (u.kind === "knight" ? 0.22 : 0.14));
+		if (gate.press <= 8) hurtWall(raid, gate, u.dmg * (u.kind === "knight" ? 0.55 : 0.45));
 		return;
 	}
 }
@@ -1878,6 +2657,7 @@ if (w && w.hp > 0 && inRangeW(u, w) && (u.kind === "beast" || u.kind === "dragon
 		if (now <= .5 && !w.climb) {
 			w.climb = true;
 			raid.walkDirty = true;
+			noteBreach(raid, w);
 			pushAlert(raid, "wall", "The wall is breached.");
 		}
 		if (now <= .45) u.pref = "keep";
@@ -2383,6 +3163,76 @@ if (inRangeB(u, b, raid)) {
 moveToward(u, b.x, b.y, dt, raid);
 return false;
 }
+function steerDefDragon(raid, u, foes, dt) {
+	const order = orderOf(u, raid);
+	const drakes = foes.filter((f) => f.kind === "dragon" && f.hp > 0);
+	let mark = null;
+	if (order === "gate") {
+		const g = gateMuster(raid);
+		const here = foes.filter((f) => dist(f.x, f.y, g.x, g.y) < 110);
+		mark = (drakes.length ? pickDefFoe(raid, u, drakes) : null) || (here.length ? pickDefFoe(raid, u, here) || here[0] : null);
+		if (!mark) {
+			if (dist(u.x, u.y, g.x, g.y) > 28) moveToward(u, g.x, g.y - 12, dt, raid);
+			return;
+		}
+	} else if (order === "wall") {
+		const hole = firstBreachPoint(raid);
+		if (hole) {
+			const here = foes.filter((f) => dist(f.x, f.y, hole.x, hole.y) < 110);
+			mark = (drakes.length ? pickDefFoe(raid, u, drakes) : null) || (here.length ? pickDefFoe(raid, u, here) || here[0] : null);
+			if (!mark) {
+				if (dist(u.x, u.y, hole.x, hole.y) > 28) moveToward(u, hole.x, hole.y, dt, raid);
+				return;
+			}
+		} else {
+			mark = drakes.length ? pickDefFoe(raid, u, drakes) : null;
+			if (!mark) return;
+		}
+	} else if (drakes.length) {
+		mark = pickDefFoe(raid, u, drakes) || drakes[0];
+	} else if (order === "keep") {
+		const keep = keepOf(raid);
+		const cx = keep?.x ?? RAID_CX;
+		const cy = keep?.y ?? RAID_CY;
+		const inner = foes.filter((f) => dist(f.x, f.y, cx, cy) < 96);
+		mark = inner.length ? pickDefFoe(raid, u, inner) || inner[0] : null;
+		if (!mark) {
+			if (dist(u.x, u.y, cx, cy) > 28) moveToward(u, cx, cy, dt, raid);
+			return;
+		}
+	} else {
+		mark = largestAtkGroup(raid) || pickDefFoe(raid, u, foes) || foes[0];
+	}
+	if (!mark) return;
+	const reach = u.range + mark.radius;
+	const d = dist(u.x, u.y, mark.x, mark.y);
+	if (d <= reach) {
+		if (u.cd <= 0) {
+			u.cd = STATS.dragon.cd;
+			if (mark.kind === "dragon") hurtUnit(raid, mark, u.dmg, true);
+			else fireShot(raid, u.x, u.y, mark.x, mark.y, u.dmg, 0, true, !mark.air, "def", mark.kind === "dragon");
+		}
+		if (d < 36) {
+			const ring = dragonOrbitPoint(raid, u, mark.x, mark.y, dt, 26);
+			moveToward(u, ring.x, ring.y, dt, raid);
+		}
+		return;
+	}
+	u.roam = u.roam || 1.6;
+	if (u.roam <= 0) u.roam = 1.6;
+	const hop = flyAcrossPoint(raid, u, mark.x, mark.y);
+	moveToward(u, hop.x, hop.y, dt, raid);
+}
+
+function strikeDefMark(raid, u, mark) {
+	if (u.cd > 0) return;
+	u.cd = STATS[u.kind]?.cd ?? .55;
+	const dmg = u.kind === "knight" && mark.kind === "levy" ? u.dmg * KNIGHT_VS_LEVY : u.dmg;
+	if (u.kind === "dragon" && mark.kind === "dragon") hurtUnit(raid, mark, dmg, true);
+	else if (u.kind === "bowman" || u.kind === "dragon") fireShot(raid, u.x, u.y, mark.x, mark.y, dmg, 0, u.kind === "dragon" || mark.air, !mark.air, "def", u.kind === "dragon");
+	else hurtUnit(raid, mark, dmg, false);
+}
+
 function steerUnit(raid, u, dt) {
 if (u.hp <= 0 || u.planted) return;
 u.cd = Math.max(0, u.cd - dt);
@@ -2409,36 +3259,102 @@ if (u.side === "def") {
 		}
 		return;
 	}
-	const huntDrake = u.kind === "dragon" ? foes.filter((f) => f.kind === "dragon") : [];
-	const huntMen = u.kind === "knight" ? foes.filter((f) => f.kind === "levy") : [];
-	const mark = pickDefFoe(raid, u, huntDrake.length ? huntDrake : huntMen.length ? huntMen : foes)
-		|| [...(huntDrake.length ? huntDrake : huntMen.length ? huntMen : foes)].sort((a, b) => dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, b.x, b.y))[0];
-	if (!mark) return;
-	const reach = u.range + mark.radius;
-	if (dist(u.x, u.y, mark.x, mark.y) <= reach) {
-		if (u.cd <= 0) {
-			u.cd = STATS[u.kind]?.cd ?? .55;
-			const dmg = u.kind === "knight" && mark.kind === "levy" ? u.dmg * KNIGHT_VS_LEVY : u.dmg;
-			if (u.kind === "dragon" && mark.kind === "dragon") hurtUnit(raid, mark, dmg, true);
-			else if (u.kind === "bowman" || u.kind === "dragon") fireShot(raid, u.x, u.y, mark.x, mark.y, dmg, 0, u.kind === "dragon" || mark.air, !mark.air, "def", u.kind === "dragon");
-			else hurtUnit(raid, mark, dmg, false);
+	if (u.kind === "dragon") {
+		steerDefDragon(raid, u, foes, dt);
+		return;
+	}
+	if (orderOf(u, raid) === "keep") {
+		const keep = keepOf(raid);
+		const cx = keep?.x ?? RAID_CX;
+		const cy = keep?.y ?? RAID_CY;
+		const inner = foes.filter((f) => dist(f.x, f.y, cx, cy) < 96);
+		if (inner.length) {
+			const mark = pickDefFoe(raid, u, inner) || inner[0];
+			const reach = u.range + mark.radius;
+			if (dist(u.x, u.y, mark.x, mark.y) <= reach) strikeDefMark(raid, u, mark);
+			else moveToward(u, mark.x, mark.y, dt, raid);
+			return;
+		}
+		const holdR = (keep?.r ?? 42) + 16;
+		if (dist(u.x, u.y, cx, cy) > holdR) moveToward(u, cx, cy, dt, raid);
+		return;
+	}
+	const rushFirst = orderOf(u, raid) === "wall" || (u.kind === "knight" && !u.holdGate);
+	if (rushFirst && !ringOpen(raid)) {
+		const hole = firstBreachPoint(raid);
+		const near = foes.filter((f) => dist(f.x, f.y, u.x, u.y) <= u.range + f.radius);
+		if (near.length) {
+			strikeDefMark(raid, u, pickDefFoe(raid, u, near) || near[0]);
+			return;
+		}
+		if (hole) {
+			if (dist(u.x, u.y, hole.x, hole.y) > 16) moveToward(u, hole.x, hole.y, dt, raid);
+			return;
 		}
 		return;
 	}
-	if (!(u.kind === "dragon" || !u.holdGate || wallsBreached(raid))) {
-		const g = gateMuster(raid);
+	const huntMen = u.kind === "knight" ? foes.filter((f) => f.kind === "levy") : [];
+	const mark = pickDefFoe(raid, u, huntMen.length ? huntMen : foes)
+		|| [...(huntMen.length ? huntMen : foes)].sort((a, b) => dist(u.x, u.y, a.x, a.y) - dist(u.x, u.y, b.x, b.y))[0];
+	if (!mark) return;
+	const reach = u.range + mark.radius;
+	if (dist(u.x, u.y, mark.x, mark.y) <= reach) {
+		strikeDefMark(raid, u, mark);
+		return;
+	}
+	if (u.holdGate && !ringOpen(raid)) {
+		const hole = wallHoleElsewhere(raid) ? breachInside(raid, u.x, u.y) : firstBreachPoint(raid);
+		if (hole && (wallHoleElsewhere(raid) || hole.gate)) {
+			if (dist(u.x, u.y, hole.x, hole.y) > 16) moveToward(u, hole.x, hole.y, dt, raid);
+			return;
+		}
+		const g = assignedMuster(raid, u);
+		if (gateDestroyed(raid)) {
+			if (dist(u.x, u.y, g.x, g.y) > 22) moveToward(u, g.x, g.y, dt, raid);
+			else if (dist(u.x, u.y, mark.x, mark.y) < 48) moveToward(u, mark.x, mark.y, dt, raid);
+			return;
+		}
 		if (dist(u.x, u.y, g.x, g.y) > 18) moveToward(u, g.x, g.y, dt, raid);
 		return;
 	}
-	if (u.kind === "dragon") {
-		u.roam = u.roam || 1.6;
-		if (u.roam <= 0) u.roam = 1.6;
-		const hop = flyAcrossPoint(raid, u, mark.x, mark.y);
-		moveToward(u, hop.x, hop.y, dt, raid);
-	} else moveToward(u, mark.x, mark.y, dt, raid);
+	moveToward(u, mark.x, mark.y, dt, raid);
 	return;
 }
 const order = orderOf(u, raid);
+if (order === "keep" && u.kind !== "ram" && u.kind !== "ladder" && u.kind !== "tower") {
+	if (u.kind === "bowman" || u.kind === "catapult" || u.kind === "dragon") {
+		if (u.kind === "bowman") standOff(raid, u, 168, dt);
+		if (u.kind === "catapult") standOff(raid, u, 200, dt);
+		if (u.kind === "dragon") {
+			const mark = pickDragonMark(raid, u);
+			if (!mark) return;
+			u.target = mark.id;
+			const d = dist(u.x, u.y, mark.x, mark.y);
+			const standoff = Math.min(u.range * 0.16, 40);
+			if (d > standoff + 10) {
+				const hop = flyAcrossPoint(raid, u, mark.x, mark.y);
+				moveToward(u, hop.x, hop.y, dt, raid);
+			} else {
+				const ring = dragonOrbitPoint(raid, u, mark.x, mark.y, dt, 26);
+				moveToward(u, ring.x, ring.y, dt, raid);
+			}
+			if (u.cd <= 0 && d <= u.range + mark.r) {
+				u.cd = STATS.dragon.cd;
+				if (mark.building) hurtBuilding(raid, mark.building, u.dmg);
+				else fireShot(raid, u.x, u.y, mark.x, mark.y, u.dmg, mark.wall ? 26 : 16, true, true, "atk", false);
+			}
+			return;
+		}
+		const keep = keepOf(raid);
+		if (keep && keep.hp > 0) {
+			fireAtBuilding(raid, u, keep, dt);
+			return;
+		}
+	}
+	if (fightIfNear(raid, u)) return;
+	driveKeep(raid, u, dt);
+	return;
+}
 if (u.kind === "bowman") {
 	if (order === "tower") {
 		if (followEngine(raid, u, ["tower"], dt)) return;
@@ -2722,7 +3638,7 @@ for (const s of raid.shots) {
 			break;
 		}
 	}
-	if (!hit && s.side === "atk" && s.ground) for (const b of raid.buildings) {
+	if (!hit && s.side === "atk" && s.ground && s.splash <= 0) for (const b of raid.buildings) {
 		if (b.hp <= 0) continue;
 		if (dist(s.x, s.y, b.x, b.y) <= b.r + 6) {
 			hurtBuilding(raid, b, s.dmg);
@@ -2760,15 +3676,16 @@ for (const s of raid.shots) {
 			if (dist(s.x, s.y, b.x, b.y) <= b.r + 10 + (s.splash || 0) * .3) {
 				hurtBuilding(raid, b, s.dmg);
 				hit = true;
-				break;
+				if (!s.splash) break;
 			}
 		}
-		if (!hit) for (const w of raid.walls) {
+		if (!hit || s.splash > 0) for (const w of raid.walls) {
 			if (w.hp <= 0) continue;
 			const c = wallCenter(w);
 			if (dist(s.x, s.y, c.x, c.y) <= Math.max(w.w, w.h) * .5 + (s.splash || 0)) {
 				hurtWall(raid, w, s.dmg);
-				break;
+				hit = true;
+				if (!s.splash) break;
 			}
 		}
 	}

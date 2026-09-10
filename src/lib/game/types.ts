@@ -18,11 +18,13 @@ export type EmpireId =
 export const PLAYER_COUNT = 13;
 export type PlayerId = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 
-export const SAVE_VERSION = 84;
+export const SAVE_VERSION = 91;
 export const WIN_CONTINENTS = 7;
+/** Hold this many seats to end the age. */
+export const WIN_CAPITALS = 7;
 /** Sim/safety cap only — the campaign has no turn limit. */
 export const TURN_LIMIT = 200;
-export const GAME_TAGLINE = "Seven regions write the age";
+export const GAME_TAGLINE = "Seven capitals write the age";
 
 export const CONTINENT_NAMES: Record<ContinentId, string> = {
   at: "Antarctica",
@@ -64,17 +66,34 @@ export const HOUSES: readonly EmpireId[] = [
 export const CAPITOL: Record<EmpireId, string> = {
   asgard: "asgard",
   eldorado: "pantanal",
-  aztec: "volcan",
+  aztec: "miskito",
   tartaria: "gobi",
-  siberia: "siberia",
-  lumuria: "irrawaddy",
-  egypt: "sahel",
-  sumer: "tigris",
+  siberia: "manchuria",
+  lumuria: "tamil",
+  egypt: "darfur",
+  sumer: "sumer",
   cape: "karoo",
-  gondwana: "sahul",
-  thule: "nord",
-  alaska: "yukon",
-  atlantis: "atlantis",
+  gondwana: "tasmania",
+  thule: "erie",
+  alaska: "rockies",
+  atlantis: "noricum",
+};
+
+/** House whose beasts raise on this region's lands. */
+export const REGION_HOUSE: Record<ContinentId, EmpireId> = {
+  at: "asgard",
+  nw: "alaska",
+  ne: "thule",
+  ca: "aztec",
+  sa: "eldorado",
+  eu: "atlantis",
+  an: "egypt",
+  af: "cape",
+  me: "sumer",
+  aw: "siberia",
+  ae: "tartaria",
+  ss: "lumuria",
+  oc: "gondwana",
 };
 
 export type Difficulty = "easy" | "normal" | "hard";
@@ -91,7 +110,7 @@ export const START_BEASTS: Record<Difficulty, number> = { easy: 3, normal: 2, ha
 export type UnitKind = "levy" | "bowman" | "knight" | "dragon" | "beast";
 export type SiegeKind = "ram" | "catapult" | "ladder" | "tower";
 
-export type JobKind = "castle" | "mine" | "port" | "ship" | "market" | "road" | "farm" | "scorpion" | "walls" | "outer-walls" | "keep-works" | "towers" | "moats" | SiegeKind | UnitKind;
+export type JobKind = "castle" | "mine" | "port" | "ship" | "warship" | "market" | "road" | "farm" | "scorpion" | "walls" | "outer-walls" | "keep-works" | "towers" | "moats" | SiegeKind | UnitKind;
 
 export function isTrainKind(kind: string): kind is UnitKind {
   return kind === "levy" || kind === "bowman" || kind === "knight" || kind === "dragon" || kind === "beast";
@@ -170,18 +189,20 @@ export interface EmpireDef {
   capitalPort?: boolean;
   /** Capital begins with a mine (inland seats). */
   capitalMine?: boolean;
-  /** Capital begins with a keel in the harbour (isolated island seats). */
+  /** Capital begins with a ship in the harbour (isolated island seats). */
   startShip?: boolean;
 }
 
 export interface TerritoryState {
   id: string;
-  owner: PlayerId | "barbarian";
+  owner: PlayerId | "barbarian" | "open";
   levy: number;
   bowmen: number;
   knights: number;
   dragons: number;
   beasts: number;
+  /** House whose fauna currently occupy this land. */
+  beastHouse?: EmpireId;
   castle: boolean;
   mine: boolean;
   port: boolean;
@@ -194,6 +215,7 @@ export interface TerritoryState {
   farm: boolean;
   farmRank: number;
   ships: number;
+  warships: number;
   rams: number;
   catapults: number;
   ladders: number;
@@ -238,6 +260,8 @@ export interface PlayerState {
   cards: CardId[];
   specialDragons: number;
   rareDragons: number;
+  /** Whale oil — fire arrows, flaming swords, flaming spears. */
+  flame: boolean;
 }
 
 export interface Job {
@@ -269,7 +293,10 @@ export interface MarchOrder {
   ladders: number;
   towers: number;
   ships: number;
+  warships: number;
   remaining: number;
+  /** House of the beasts in this column. */
+  beastHouse?: EmpireId;
   /** True when independent tribes are the column — player is unused for ownership. */
   tribal?: boolean;
 }
@@ -314,7 +341,7 @@ export type AiAction =
   | { type: "train"; territoryId: string; kind: UnitKind }
   | { type: "build"; territoryId: string; kind: JobKind }
   | { type: "siege"; from: string; to: string }
-  | { type: "march"; from: string; to: string; levy: number; bowmen: number; knights: number; dragons: number; beasts: number }
+  | { type: "march"; from: string; to: string; levy: number; bowmen: number; knights: number; dragons: number; beasts: number; ships?: number; warships?: number }
   | { type: "card"; card: CardId; territoryId?: string };
 
 export interface HostForce {
@@ -403,9 +430,27 @@ export const UNIT_CAP: Record<UnitKind, number> = {
 };
 /** Highest rank for markets, ports, mines and walls. */
 export const WORKS_CAP = 3;
-/** Keels per harbour rank (I=2, II=4, III=6). A beach without a port berths 1. */
+/** Ships per harbour rank (I=2, II=4, III=6). A beach without a port berths 1. */
 export const SHIPS_PER_RANK = 2;
 export const SHIPS_CAP = WORKS_CAP * SHIPS_PER_RANK;
+/** Warship strike on the water. */
+export const WARSHIP_ATK = 10;
+/** Warship hold on the water. */
+export const WARSHIP_DEF = 12;
+/** Defence a warship adds to occupied waters, similar to a city watch. */
+export const WARSHIP_WORKS = 8;
+/** Neighbouring rival warships add this much support. */
+export const WARSHIP_SUPPORT = 6;
+export const WARSHIP_COST = { gold: 6, wood: 6, stone: 0, metal: 2 };
+export const WARSHIP_TURNS = 2;
+/** Fish or shellfish taken by a ship on occupied waters. */
+export const SEA_FOOD_YIELD = 2;
+/** Lost treasure taken by a ship near land. */
+export const SEA_TREASURE_YIELD = 3;
+/** Whale oil gold, and it arms the host with flame. */
+export const SEA_WHALE_GOLD = 2;
+/** Extra attack on warriors, archers and knights after whale oil. */
+export const FLAME_ATK = 1;
 /** Siege engines stored on a city. */
 export const SIEGE_CAP = 5;
 /** At most this many of each engine march with a host. */

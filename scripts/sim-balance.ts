@@ -85,7 +85,7 @@ function winHowOf(s: GameState): WinHow {
   if (s.phase !== "gameover") return "unfinished";
   const line = s.log.at(-1) ?? "";
   if (line.includes("stands alone")) return "last";
-  if (line.includes("seven regions") || line.includes("five regions") || line.includes("two continents") || line.includes("six continents")) {
+  if (line.includes("seven regions") || line.includes("five regions") || line.includes("two continents") || line.includes("six continents") || line.includes("capitals")) {
     return "continents";
   }
   if (line.includes("dead heat") || line.includes("No court remains") || line.includes("No empire remains")) return "draw";

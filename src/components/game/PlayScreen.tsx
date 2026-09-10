@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { legalMarchTargets } from "@/lib/game/engine";
 import { useGame } from "@/lib/game/store";
@@ -60,10 +60,12 @@ export function PlayScreen({
     battleCancel,
     dismissWatch,
     finishTurn,
+    leave,
     abandon,
   } = useGame();
   const [action, setAction] = useState<ActionKind | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
+  const leaving = useRef(false);
 
   useEffect(() => {
     if (!fx.length) return;
@@ -106,6 +108,7 @@ export function PlayScreen({
   }
 
   if (!state) {
+    if (leaving.current) return null;
     return <LoadingScreen label="Generating the world" wait />;
   }
 
@@ -130,8 +133,9 @@ export function PlayScreen({
           state={state}
           onEnd={finishTurn}
           onQuit={() => {
-            abandon();
-            nav({ to: "/" });
+            leaving.current = true;
+            leave();
+            void nav({ to: "/" });
           }}
         />
       </div>
@@ -210,7 +214,7 @@ export function PlayScreen({
           </div>
         ) : pendingWatch ? (
           <div className="absolute inset-x-3 bottom-2 z-20 sm:inset-x-4">
-            <WatchReport lines={pendingWatch} onDismiss={dismissWatch} />
+            <WatchReport lines={pendingWatch.lines} shifts={pendingWatch.shifts} onDismiss={dismissWatch} />
           </div>
         ) : action ? (
           <div className="absolute inset-x-3 bottom-2 z-20 sm:inset-x-4">
@@ -242,8 +246,8 @@ export function PlayScreen({
         <nav className="grid shrink-0 grid-cols-2 gap-2 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:grid-cols-4 sm:px-4">
           {(
             [
-              ["train", "Train", "Raise warriors, archers, knights, beasts or a dragon."],
-              ["march", "March", "Set the host, then tap a neighbour."],
+              ["train", "Train", "Raise warriors, archers and knights anywhere you hold. Beasts on that region's lands. Dragons only at a capital. Warships at a harbour."],
+              ["march", "Move", "Move the host to a neighbour. On waters, sail the fleet or disembark the army onto land."],
               ["build", "Build", "Ports, mines, markets, farms, roads and ships."],
               ["defend", "Defend", "Walls, outer walls, keep, towers, moats and scorpions — the city ring."],
             ] as const

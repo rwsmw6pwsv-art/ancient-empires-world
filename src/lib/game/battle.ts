@@ -4,6 +4,7 @@ import { mulberry32, randInt } from "./rng";
 import type { EmpireId, GameState, HostForce, TerritoryState, UnitKind } from "./types";
 import { EMPTY_HOST, UNIT_ATK, UNIT_DEF, UNIT_HP, UNIT_LABEL_PLURAL } from "./types";
 import { TERRITORY_BY_ID } from "./world";
+import { beastOfLand, beastOfTerritory } from "./engine";
 
 export type BattleSide = "atk" | "def";
 
@@ -72,12 +73,12 @@ function cloneBattle(battle: BattleState): BattleState {
 }
 
 function beastFor(state: GameState, owner: TerritoryState["owner"]) {
-  if (owner === "barbarian") return null;
+  if (owner === "barbarian" || owner === "open") return null;
   return beastOf(state.players[owner]!.empire);
 }
 
 function empireFor(state: GameState, owner: TerritoryState["owner"]): EmpireId | null {
-  if (owner === "barbarian") return null;
+  if (owner === "barbarian" || owner === "open") return null;
   return state.players[owner]!.empire;
 }
 
@@ -166,19 +167,19 @@ export function openBattle(
   const atkEmpire = empireFor(state, from.owner);
   const defEmpire = empireFor(state, to.owner);
   const stacks = [
-    ...spawn("atk", send, beastFor(state, from.owner), terrain, atkEmpire),
+    ...spawn("atk", send, send.beasts > 0 ? (from.beastHouse ? beastOf(from.beastHouse) : beastOfLand(fromId)) : beastFor(state, from.owner), terrain, atkEmpire),
     ...spawn(
       "def",
       { levy: to.levy, bowmen: to.bowmen ?? 0, knights: to.knights, dragons: to.dragons, beasts: to.beasts ?? 0 },
-      beastFor(state, to.owner),
+      (to.beasts ?? 0) > 0 ? beastOfTerritory(to) : beastFor(state, to.owner),
       terrain,
       defEmpire,
     ),
   ];
   const fromName = TERRITORY_BY_ID[fromId]!.name;
   const toName = TERRITORY_BY_ID[toId]!.name;
-  const atkName = from.owner === "barbarian" ? "Tribes" : empireOf(state.players[from.owner]!.empire).name;
-  const defName = to.owner === "barbarian" ? "Independent tribes" : empireOf(state.players[to.owner]!.empire).name;
+  const atkName = from.owner === "barbarian" || from.owner === "open" ? "Tribes" : empireOf(state.players[from.owner]!.empire).name;
+  const defName = to.owner === "barbarian" || to.owner === "open" ? "Independent tribes" : empireOf(state.players[to.owner]!.empire).name;
   const startAtk = livingCount(stacks, "atk");
   const startDef = livingCount(stacks, "def");
   const log = [`${atkName} fall on ${toName} from ${fromName}. ${defName} hold the ground.`];

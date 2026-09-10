@@ -2,7 +2,7 @@
  * Headless AI-vs-AI balance sim: each empire as first player, 3 seeds.
  * Usage: node --experimental-strip-types --import ./scripts/register-ts.mjs scripts/sim-empires.ts
  */
-import { createNewGame, continentsHeld, ownedIds, rankPlayers } from "../src/lib/game/engine.ts";
+import { createNewGame, continentsHeld, capitalsHeld, ownedIds, rankPlayers } from "../src/lib/game/engine.ts";
 import { nextAiAction, applyAiAction } from "../src/lib/game/ai.ts";
 import { empireOf } from "../src/lib/game/empires.ts";
 import { HOUSES, TURN_LIMIT, type Difficulty, type EmpireId, type GameState } from "../src/lib/game/types.ts";
@@ -53,7 +53,9 @@ function snapshot(state: GameState, hero: EmpireId) {
     winHow:
       state.winner == null
         ? "draw"
-        : continentsHeld(state, state.winner).length >= 2
+        : capitalsHeld(state, state.winner).length >= 7
+          ? "capitals"
+          : continentsHeld(state, state.winner).length >= 2
           ? "continents"
           : "last-standing",
     winnerLands: winnerP ? ownedIds(state, winnerP.id).length : 0,

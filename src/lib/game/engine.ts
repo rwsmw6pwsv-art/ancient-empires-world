@@ -29,6 +29,7 @@ import {
   AF_REGIONS,
   HOUSES,
   PLAYER_COUNT,
+  REGION_HOUSE,
   SAVE_VERSION,
   UNIT_ATK,
   UNIT_COST,
@@ -46,7 +47,17 @@ import {
   WORKS_CAP,
   SHIPS_CAP,
   SHIPS_PER_RANK,
-  WIN_CONTINENTS,
+  WARSHIP_ATK,
+  WARSHIP_DEF,
+  WARSHIP_WORKS,
+  WARSHIP_SUPPORT,
+  WARSHIP_COST,
+  WARSHIP_TURNS,
+  SEA_FOOD_YIELD,
+  SEA_TREASURE_YIELD,
+  SEA_WHALE_GOLD,
+  FLAME_ATK,
+  WIN_CAPITALS,
   LEVY_COMMISSION,
   BEAST_WAGE,
   CAPTURE_GOLD_BASE,
@@ -77,6 +88,8 @@ import {
   TERRITORY_BY_ID,
 } from "./world";
 import { beastOf, landscapeOf, type BeastDef } from "./landscape";
+import { blankWater, isWater, placeName, seaYieldOf, WATER_IDS } from "./waters";
+import { hexNeighbors } from "./globe";
 import {
   DEFENSE_CAP,
   DEFENSE_COST,
@@ -92,6 +105,14 @@ import {
 
 export function isBarbarian(owner: TerritoryState["owner"]): owner is "barbarian" {
   return owner === "barbarian";
+}
+
+export function isOpen(owner: TerritoryState["owner"]): owner is "open" {
+  return owner === "open";
+}
+
+export function isPlayerOwner(owner: TerritoryState["owner"]): owner is PlayerId {
+  return owner !== "barbarian" && owner !== "open";
 }
 
 export function standing(t: TerritoryState): number {
@@ -128,18 +149,57 @@ export function hostTotal(force: { levy?: number; bowmen?: number; knights?: num
 }
 
 export function beastOfOwner(state: GameState, owner: TerritoryState["owner"]): BeastDef | null {
-  if (owner === "barbarian") return null;
+  if (!isPlayerOwner(owner)) return null;
   return beastOf(state.players[owner]!.empire);
+}
+
+export function houseOfLand(id: string): EmpireId {
+  const meta = TERRITORY_BY_ID[id];
+  if (!meta) return "atlantis";
+  return REGION_HOUSE[meta.continent];
+}
+
+export function beastOfLand(id: string): BeastDef {
+  return beastOf(houseOfLand(id));
+}
+
+export function beastHouseOf(t: TerritoryState): EmpireId {
+  return t.beastHouse ?? houseOfLand(t.id);
+}
+
+export function beastOfTerritory(t: TerritoryState): BeastDef {
+  return beastOf(beastHouseOf(t));
+}
+
+export function addBeasts(t: TerritoryState, n: number, house: EmpireId) {
+  if (n <= 0) return;
+  const cur = t.beasts ?? 0;
+  if (cur <= 0) t.beastHouse = house;
+  else if ((t.beastHouse ?? house) !== house && n > cur) t.beastHouse = house;
+  t.beasts = cur + n;
+}
+
+function takeBeasts(t: TerritoryState, n: number): EmpireId | undefined {
+  if (n <= 0) return undefined;
+  const house = beastHouseOf(t);
+  t.beasts = Math.max(0, (t.beasts ?? 0) - n);
+  if ((t.beasts ?? 0) <= 0) {
+    t.beasts = 0;
+    t.beastHouse = undefined;
+  }
+  return house;
 }
 
 export function forceStrength(
   force: { levy: number; bowmen?: number; knights: number; dragons: number; beasts?: number },
   beastAtk: number,
+  flame = false,
 ): number {
+  const bonus = flame ? FLAME_ATK : 0;
   return (
-    force.levy * UNIT_ATK.levy +
-    (force.bowmen ?? 0) * UNIT_ATK.bowman +
-    force.knights * UNIT_ATK.knight +
+    force.levy * (UNIT_ATK.levy + bonus) +
+    (force.bowmen ?? 0) * (UNIT_ATK.bowman + bonus) +
+    force.knights * (UNIT_ATK.knight + bonus) +
     force.dragons * UNIT_ATK.dragon +
     (force.beasts ?? 0) * beastAtk
   );
@@ -200,9 +260,14 @@ export function hasKeep(t: TerritoryState): boolean {
 }
 
 export function shipsCap(t: TerritoryState): number {
+  if (isWater(t.id)) return 99;
   const r = worksRank(t, "port");
   if (r < 1) return 1;
   return Math.min(SHIPS_CAP, r * SHIPS_PER_RANK);
+}
+
+export function warshipsCap(t: TerritoryState): number {
+  return shipsCap(t);
 }
 
 export function siegeCount(t: TerritoryState, kind: SiegeKind): number {
@@ -273,14 +338,15 @@ export function beginSiege(state: GameState, fromId: string, toId: string): Game
   const from = terr(next, fromId);
   const to = terr(next, toId);
   const player = next.clock.currentPlayer;
+  if (isWater(toId) || isWater(fromId)) return state;
   if (from.owner !== player || to.owner === player) return state;
   if (standing(from) < 1) return state;
   const legal = legalMarchTargets(next, fromId);
   if (!legal.includes(toId)) return state;
   liftSiegesFrom(next, fromId);
   to.besiegedFrom = fromId;
-  const place = TERRITORY_BY_ID[toId]!.name;
-  const camp = TERRITORY_BY_ID[fromId]!.name;
+  const place = placeName(toId);
+  const camp = placeName(fromId);
   log(next, `${empireOf(playerOf(next, player).empire).name} lays siege to ${place} from ${camp}. Rams and ladders raise in a watch, towers in three, catapults in five — each extra engine takes longer.`);
   return next;
 }
@@ -294,7 +360,34 @@ function berthShip(from: TerritoryState, to: TerritoryState): boolean {
   return false;
 }
 
+function berthWarship(from: TerritoryState, to: TerritoryState): boolean {
+  if ((to.warships ?? 0) < warshipsCap(to)) {
+    to.warships = (to.warships ?? 0) + 1;
+    return true;
+  }
+  from.warships = (from.warships ?? 0) + 1;
+  return false;
+}
+
+function vacateIfEmpty(t: TerritoryState) {
+  if (!isWater(t.id)) return;
+  if ((t.ships ?? 0) + (t.warships ?? 0) + standing(t) > 0) return;
+  t.owner = "open";
+  t.levy = 0;
+  t.bowmen = 0;
+  t.knights = 0;
+  t.dragons = 0;
+  t.beasts = 0;
+  t.beastHouse = undefined;
+  t.ships = 0;
+  t.warships = 0;
+}
+
 export function worksDefense(t: TerritoryState): number {
+  if (isWater(t.id)) {
+    if (!isPlayerOwner(t.owner)) return 0;
+    return (t.warships ?? 0) * WARSHIP_WORKS + (t.ships ?? 0) * 1;
+  }
   const fort = fortOf(t);
   if (isBarbarian(t.owner)) return fort > 0 ? FORT_DEF[fort]! : TRIBAL_DEF;
   return CITY_DEF + (fort > 0 ? FORT_DEF[fort]! : 0);
@@ -304,12 +397,16 @@ export function defenseStrength(t: TerritoryState, beastDef = 0): number {
   return forceDefense(t, beastDef) + worksDefense(t);
 }
 
+export function flameOf(state: GameState, owner: TerritoryState["owner"]): boolean {
+  return isPlayerOwner(owner) && Boolean(state.players[owner]?.flame);
+}
+
 export function hostAttack(state: GameState, t: TerritoryState): number {
-  return forceStrength(t, beastOfOwner(state, t.owner)?.atk ?? 0);
+  return forceStrength(t, (t.beasts ?? 0) > 0 ? beastOfTerritory(t).atk : 0, flameOf(state, t.owner));
 }
 
 export function hostDefense(state: GameState, t: TerritoryState): number {
-  return defenseStrength(t, beastOfOwner(state, t.owner)?.def ?? 0);
+  return defenseStrength(t, (t.beasts ?? 0) > 0 ? beastOfTerritory(t).def : 0);
 }
 
 export function oddsLabel(atk: number, def: number): string {
@@ -323,8 +420,12 @@ export function oddsLabel(atk: number, def: number): string {
 
 export function ownedIds(state: GameState, player: PlayerId): string[] {
   return Object.values(state.territories)
-    .filter((t) => t.owner === player)
+    .filter((t) => t.owner === player && !isWater(t.id))
     .map((t) => t.id);
+}
+
+export function occupiedWaters(state: GameState, player: PlayerId): TerritoryState[] {
+  return Object.values(state.territories).filter((t) => t.owner === player && isWater(t.id));
 }
 
 export function hasJob(state: GameState, territoryId: string): boolean {
@@ -344,11 +445,11 @@ export function hasKindJob(state: GameState, territoryId: string, kind: JobKind)
 }
 
 export function trainBusy(state: GameState, territoryId: string): boolean {
-  return state.jobs.some((j) => j.territoryId === territoryId && isTrainKind(j.kind));
+  return state.jobs.some((j) => j.territoryId === territoryId && (isTrainKind(j.kind) || j.kind === "warship"));
 }
 
 export function constructionBusy(state: GameState, territoryId: string): boolean {
-  return state.jobs.some((j) => j.territoryId === territoryId && !isTrainKind(j.kind));
+  return state.jobs.some((j) => j.territoryId === territoryId && !isTrainKind(j.kind) && j.kind !== "warship");
 }
 
 export function trainJobOf(state: GameState, territoryId: string): Job | undefined {
@@ -403,6 +504,10 @@ export function continentsHeld(state: GameState, player: PlayerId): ContinentId[
     if (lands.length && lands.every((t) => owned.has(t.id))) held.push(c);
   }
   return held;
+}
+
+export function capitalsHeld(state: GameState, player: PlayerId): string[] {
+  return Object.values(CAPITOL).filter((id) => state.territories[id]?.owner === player);
 }
 
 export function continentShare(state: GameState, player: PlayerId): Record<ContinentId, number> {
@@ -504,7 +609,18 @@ export function incomeFor(state: GameState, player: PlayerId) {
   }
   for (const c of continentsHeld(state, player)) gold += CONTINENT_BONUS[c];
   gold += tradeFor(state, player);
-  return { gold, silver, wood, stone, metal, food };
+  let flame = false;
+  for (const t of occupiedWaters(state, player)) {
+    if ((t.ships ?? 0) < 1) continue;
+    const yieldKind = seaYieldOf(t.id);
+    if (yieldKind === "fish" || yieldKind === "shellfish") food += SEA_FOOD_YIELD;
+    if (yieldKind === "treasure") gold += SEA_TREASURE_YIELD;
+    if (yieldKind === "whale") {
+      gold += SEA_WHALE_GOLD;
+      flame = true;
+    }
+  }
+  return { gold, silver, wood, stone, metal, food, flame };
 }
 
 export function tradeFor(state: GameState, player: PlayerId): number {
@@ -538,6 +654,14 @@ export function tradeFor(state: GameState, player: PlayerId): number {
       }
     }
   }
+  for (const t of occupiedWaters(state, player)) {
+    ships += t.ships;
+    if ((t.ships ?? 0) < 1) continue;
+    const yieldKind = seaYieldOf(t.id);
+    if (yieldKind === "fish" || yieldKind === "shellfish") trade += 2;
+    if (yieldKind === "treasure") trade += 3;
+    if (yieldKind === "whale") trade += 2;
+  }
   trade += ports;
   trade += ships * 2;
   trade += veins;
@@ -548,8 +672,8 @@ export function tradeFor(state: GameState, player: PlayerId): number {
 
 export function upkeepFor(state: GameState, player: PlayerId) {
   let silver = 0;
-  for (const id of ownedIds(state, player)) {
-    const t = terr(state, id);
+  for (const t of Object.values(state.territories)) {
+    if (t.owner !== player) continue;
     silver += Math.max(t.levy + (t.bowmen ?? 0) > 0 ? 1 : 0, Math.floor((t.levy + (t.bowmen ?? 0)) / LEVY_COMMISSION));
     silver += t.knights;
     silver += t.dragons;
@@ -719,6 +843,7 @@ export function createNewGame(opts: {
     cards: ["levy", "forge"] as CardId[],
     specialDragons: 0,
     rareDragons: 0,
+    flame: false,
   }));
 
   const territories: Record<string, TerritoryState> = {};
@@ -743,6 +868,7 @@ export function createNewGame(opts: {
       farm: false,
       farmRank: 0,
       ships: 0,
+      warships: 0,
       rams: 0,
       catapults: 0,
       ladders: 0,
@@ -791,6 +917,7 @@ export function createNewGame(opts: {
       bowmen: START_BOWMEN[difficulty],
       knights: START_KNIGHTS[difficulty],
       beasts: START_BEASTS[difficulty],
+      beastHouse: p.empire,
       castle: true,
       castleRank: 2,
       fort: 2,
@@ -803,7 +930,11 @@ export function createNewGame(opts: {
       road: true,
       population: 4,
       ships: def.startShip ? 1 : 0,
+      warships: 0,
     });
+  }
+  for (const id of WATER_IDS) {
+    if (!territories[id]) territories[id] = blankWater(id);
   }
   seedBarbarians(state, rng);
   return state;
@@ -819,27 +950,51 @@ export function legalTargets(state: GameState, fromId: string): string[] {
 
 export function legalMarchTargets(state: GameState, fromId: string): string[] {
   const from = terr(state, fromId);
-  if (isBarbarian(from.owner)) return [];
+  if (!isPlayerOwner(from.owner)) return [];
   const player = from.owner;
-  const land = landNeighbors(fromId);
-  const fromMeta = TERRITORY_BY_ID[fromId];
-  const sea =
-    fromMeta?.coastal && from.ships > 0
-      ? seaNeighbors(fromId).filter((id) => {
-          const dest = TERRITORY_BY_ID[id];
-          const dt = state.territories[id];
-          return Boolean(dest?.coastal && dt);
-        })
-      : [];
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const id of [...land, ...sea]) {
-    if (id === fromId || seen.has(id)) continue;
+  const add = (id: string) => {
+    if (id === fromId || seen.has(id) || !state.territories[id]) return;
     seen.add(id);
-    const dest = terr(state, id);
-    if (dest.owner === player && standing(dest) >= 0) out.push(id);
-    else out.push(id);
+    out.push(id);
+  };
+  if (!isWater(fromId)) {
+    for (const id of landNeighbors(fromId)) add(id);
+    const fromMeta = TERRITORY_BY_ID[fromId];
+    if (fromMeta?.coastal && (from.warships ?? 0) > 0) {
+      for (const id of seaNeighbors(fromId)) {
+        const dest = TERRITORY_BY_ID[id];
+        if (dest?.coastal) add(id);
+      }
+    }
   }
+  if ((from.ships ?? 0) > 0 || (from.warships ?? 0) > 0 || isWater(fromId)) {
+    for (const id of hexNeighbors(fromId)) add(id);
+    if (!isWater(fromId) && TERRITORY_BY_ID[fromId]?.coastal) {
+      const landSeen = new Set<string>([fromId]);
+      let frontier = [fromId];
+      for (let hop = 0; hop < 4; hop++) {
+        const nextLand: string[] = [];
+        let found = 0;
+        for (const land of frontier) {
+          for (const id of hexNeighbors(land)) {
+            if (isWater(id)) {
+              add(id);
+              found += 1;
+            } else if (!landSeen.has(id)) {
+              landSeen.add(id);
+              nextLand.push(id);
+            }
+          }
+        }
+        if (found > 0) break;
+        frontier = nextLand;
+        if (frontier.length === 0) break;
+      }
+    }
+  }
+  void player;
   return out;
 }
 
@@ -931,6 +1086,7 @@ type AssaultMeta = {
   tribal?: boolean;
   watch: number;
   fieldLevy: number;
+  atkBeastHouse?: EmpireId;
 };
 
 function prepareAssault(
@@ -960,12 +1116,13 @@ function prepareAssault(
   if (sent < 1) return null;
   const legal = legalMarchTargets(next, fromId);
   if (!legal.includes(toId)) return null;
+  if (isWater(fromId) || isWater(toId)) return null;
 
   const seaHop = !landNeighbors(fromId).includes(toId);
   let convoy = 0;
   if (seaHop) {
-    if (!TERRITORY_BY_ID[fromId]?.coastal || from.ships < 1) return null;
-    from.ships -= 1;
+    if (!TERRITORY_BY_ID[fromId]?.coastal || (from.warships ?? 0) < 1) return null;
+    from.warships -= 1;
     convoy = 1;
   }
 
@@ -975,16 +1132,16 @@ function prepareAssault(
   const prevOwner = to.owner;
   const destCont = TERRITORY_BY_ID[toId]!.continent;
   const brokeContinent =
-    prevOwner !== "barbarian" && holdsContinent(next, prevOwner, destCont);
+    isPlayerOwner(prevOwner) && holdsContinent(next, prevOwner, destCont);
   const wasCapitol =
-    prevOwner !== "barbarian" && empireOf(playerOf(next, prevOwner).empire).capitol === toId;
+    isPlayerOwner(prevOwner) && empireOf(playerOf(next, prevOwner).empire).capitol === toId;
   const continentsBefore = continentsHeld(next, player).length;
 
   from.levy -= force.levy;
   from.bowmen = (from.bowmen ?? 0) - sendBowmen;
   from.knights -= force.knights;
   from.dragons -= force.dragons;
-  from.beasts = (from.beasts ?? 0) - sendBeasts;
+  const atkBeastHouse = takeBeasts(from, sendBeasts);
 
   if (to.owner === player) {
     to.levy += force.levy;
@@ -995,9 +1152,9 @@ function prepareAssault(
       from.dragons += to.dragons - DRAGON_CAP;
       to.dragons = DRAGON_CAP;
     }
-    to.beasts = (to.beasts ?? 0) + sendBeasts;
-    if (convoy) berthShip(from, to);
-    log(next, `${empireOf(playerOf(next, player).empire).name} ${convoy ? "sails" : "marches"} into ${TERRITORY_BY_ID[toId]!.name}.`);
+    if (sendBeasts > 0 && atkBeastHouse) addBeasts(to, sendBeasts, atkBeastHouse);
+    if (convoy) berthWarship(from, to);
+    log(next, `${empireOf(playerOf(next, player).empire).name} ${convoy ? "sails" : "marches"} into ${placeName(toId)}.`);
     next.marchFrom = null;
     return { next, friendly: true };
   }
@@ -1019,6 +1176,7 @@ function prepareAssault(
       player,
       watch: cityWatch(to),
       fieldLevy: to.levy,
+      atkBeastHouse,
     },
   };
 }
@@ -1045,7 +1203,7 @@ function finishAssault(
   const from = terr(next, meta.fromId);
   const to = terr(next, meta.toId);
   const attackerName = meta.tribal ? "Tribes" : empireOf(playerOf(next, meta.player).empire).name;
-  const place = TERRITORY_BY_ID[meta.toId]!.name;
+  const place = placeName(meta.toId);
   const aliveAtk = aLevy + aBowmen + aKnights + aDragons + aBeasts;
   const aliveDef = dLevy + dBowmen + dKnights + dDragons + dBeasts;
 
@@ -1056,13 +1214,18 @@ function finishAssault(
     to.bowmen = aBowmen;
     to.knights = aKnights;
     to.dragons = aDragons;
-    to.beasts = aBeasts;
+    to.beasts = 0;
+    to.beastHouse = undefined;
+    if (aBeasts > 0 && !meta.tribal) addBeasts(to, aBeasts, meta.atkBeastHouse ?? houseOfLand(meta.fromId));
     if (to.dragons > DRAGON_CAP) {
       from.dragons += to.dragons - DRAGON_CAP;
       to.dragons = DRAGON_CAP;
     }
     to.ships = 0;
-    if (meta.convoy && !meta.tribal) berthShip(from, to);
+    to.warships = 0;
+    if (meta.convoy && !meta.tribal) {
+      for (let i = 0; i < meta.convoy; i++) berthWarship(from, to);
+    }
     to.pressure = 0;
     to.breach = 0;
     to.besiegedFrom = null;
@@ -1075,11 +1238,12 @@ function finishAssault(
       to.dragons = 0;
       to.beasts = 0;
       to.ships = 0;
+      to.warships = 0;
     } else {
       grantSpoils(next, meta.player, meta.toId, meta.defHost, meta.brokeContinent);
     }
-    if (prev === "barbarian") {
-      if (!meta.tribal) to.levy += 1;
+    if (prev === "barbarian" || prev === "open") {
+      if (!meta.tribal && prev === "barbarian") to.levy += 1;
       log(next, `${attackerName} takes ${place} and strips the camp.`);
     } else {
       const leftover = ownedIds(next, prev).length;
@@ -1095,10 +1259,10 @@ function finishAssault(
     }
     if (!meta.tribal && continentsHeld(next, meta.player).length > meta.continentsBefore) {
       const nest = placeDragon(next, meta.player, meta.toId, meta.fromId, 3);
-      if (nest) log(next, `A rare dragon wakes in ${TERRITORY_BY_ID[nest]!.name} over ${CONTINENT_NAMES[meta.destCont]}.`);
+      if (nest) log(next, `A rare dragon wakes in ${placeName(nest)} over ${CONTINENT_NAMES[meta.destCont]}.`);
     } else if (!meta.tribal && meta.wasCapitol) {
       const nest = placeDragon(next, meta.player, meta.toId, meta.fromId, 2);
-      if (nest) log(next, `A special dragon wakes in ${TERRITORY_BY_ID[nest]!.name} over the fallen capital.`);
+      if (nest) log(next, `A special dragon wakes in ${placeName(nest)} over the fallen capital.`);
     }
   } else {
     to.levy = persistFieldLevy(meta.fieldLevy, meta.watch, dLevy);
@@ -1106,12 +1270,13 @@ function finishAssault(
     to.knights = dKnights;
     to.dragons = dDragons;
     to.beasts = dBeasts;
+    if (dBeasts <= 0) to.beastHouse = undefined;
     from.levy += aLevy;
     from.bowmen = (from.bowmen ?? 0) + aBowmen;
     from.knights += aKnights;
     from.dragons += aDragons;
-    from.beasts = (from.beasts ?? 0) + aBeasts;
-    if (meta.convoy && aliveAtk > 0) from.ships += meta.convoy;
+    if (aBeasts > 0) addBeasts(from, aBeasts, meta.atkBeastHouse ?? houseOfLand(meta.fromId));
+    if (meta.convoy && aliveAtk > 0) from.warships = (from.warships ?? 0) + meta.convoy;
     if (meta.tribalCamp) to.pressure = 3;
     log(next, `${attackerName} is thrown back from ${place}.`);
   }
@@ -1153,8 +1318,9 @@ export function resolveAttack(
     dDragons = hit.dragons;
     dBeasts = hit.beasts;
   }
-  const atkBeast = beastOf(playerOf(next, meta.player).empire);
-  const defBeast = beastOfOwner(next, to.owner);
+  const atkBeast = meta.tribal ? { atk: 0, def: 0 } : beastOf(meta.atkBeastHouse ?? houseOfLand(fromId));
+  const defBeast = (to.beasts ?? 0) > 0 ? beastOfTerritory(to) : beastOfOwner(next, to.owner);
+  const flameAtk = flameOf(next, meta.player);
   let works = spendSiegeOnWorks(terr(next, fromId), worksDefense(to));
   works = Math.max(0, works - (to.breach ?? 0) * 4);
   let guard = 24;
@@ -1162,10 +1328,11 @@ export function resolveAttack(
   const aliveDef = () => dLevy + dBowmen + dKnights + dDragons + dBeasts;
   while (guard-- > 0 && aliveAtk() > 0 && aliveDef() > 0) {
     const knightBonus = aKnights > 0 && dLevy > 0 ? aKnights * 2 : 0;
+    const bonus = flameAtk ? FLAME_ATK : 0;
     const atkStr =
-      aLevy * UNIT_ATK.levy +
-      aBowmen * UNIT_ATK.bowman +
-      aKnights * UNIT_ATK.knight +
+      aLevy * (UNIT_ATK.levy + bonus) +
+      aBowmen * (UNIT_ATK.bowman + bonus) +
+      aKnights * (UNIT_ATK.knight + bonus) +
       knightBonus +
       aDragons * UNIT_ATK.dragon +
       aBeasts * atkBeast.atk;
@@ -1241,7 +1408,7 @@ export function recallOccupiers(
   state: GameState,
   fromId: string,
   toId: string,
-  recall: { levy: number; bowmen?: number; knights: number; dragons: number; beasts: number; ships?: number },
+  recall: { levy: number; bowmen?: number; knights: number; dragons: number; beasts: number; ships?: number; warships?: number },
 ): GameState {
   const next = clone(state);
   const from = terr(next, fromId);
@@ -1265,17 +1432,22 @@ export function recallOccupiers(
   to.bowmen = (to.bowmen ?? 0) - bowmen;
   to.knights -= knights;
   to.dragons -= dragons;
-  to.beasts = (to.beasts ?? 0) - beasts;
+  const recalledHouse = takeBeasts(to, beasts);
   from.levy += levy;
   from.bowmen = (from.bowmen ?? 0) + bowmen;
   from.knights += knights;
   from.dragons += dragons;
-  from.beasts = (from.beasts ?? 0) + beasts;
+  if (beasts > 0 && recalledHouse) addBeasts(from, beasts, recalledHouse);
   const returning = levy + bowmen + knights + dragons + beasts;
   const sailHome = (recall.ships ?? 0) > 0 && returning > 0 && (to.ships ?? 0) > 0 && seaNeighbors(toId).includes(fromId);
   if (sailHome) {
     to.ships -= 1;
     berthShip(to, from);
+  }
+  const sailWarship = (recall.warships ?? 0) > 0 && returning > 0 && (to.warships ?? 0) > 0 && seaNeighbors(toId).includes(fromId);
+  if (sailWarship) {
+    to.warships = (to.warships ?? 0) - 1;
+    berthWarship(to, from);
   }
   log(next, `${empireOf(playerOf(next, player).empire).name} sends a host back to ${TERRITORY_BY_ID[fromId]!.name}.`);
   return next;
@@ -1285,17 +1457,18 @@ export function trainUnit(state: GameState, territoryId: string, kind: UnitKind)
   const next = clone(state);
   const p = current(next);
   const t = terr(next, territoryId);
+  if (isWater(territoryId)) return state;
   if (t.owner !== p.id) return state;
-  if (kind === "beast" && !Object.values(CAPITOL).includes(territoryId)) return state;
+  if (kind === "dragon" && !Object.values(CAPITOL).includes(territoryId)) return state;
   if (kind === "dragon" && hasKindJob(next, territoryId, "dragon")) return state;
-  const beast = beastOf(p.empire);
+  const beast = kind === "beast" ? beastOfLand(territoryId) : beastOf(p.empire);
   const cost = kind === "beast" ? { gold: beast.cost, wood: 0, stone: 0, metal: 0 } : UNIT_COST[kind];
   if (!pay(p, cost.gold, cost.wood, cost.stone, cost.metal)) return state;
   const wait = UNIT_TURNS[kind];
   enqueue(next, kind, territoryId, wait, cost);
   const label = kind === "beast" ? beast.name : UNIT_LABEL[kind].toLowerCase();
   const watches = wait === 1 ? "one watch" : `${wait} watches`;
-  log(next, `${empireOf(p.empire).name} drills ${label} in ${TERRITORY_BY_ID[territoryId]!.name} — ${watches}.`);
+  log(next, `${empireOf(p.empire).name} drills ${label} in ${placeName(territoryId)} — ${watches}.`);
   return next;
 }
 
@@ -1353,6 +1526,7 @@ export function worksCost(p: PlayerState, kind: JobKind, t?: TerritoryState) {
   if (kind === "mine") return { ...mineCost(p), metal: 0 };
   if (kind === "castle") return { ...castleCost(p), metal: 0 };
   if (kind === "ship") return { ...shipCost(p), metal: 0 };
+  if (kind === "warship") return { ...WARSHIP_COST };
   if (kind === "road") return { ...roadCost(p), metal: 0 };
   if (kind === "farm") return { ...farmCost(p), metal: 0 };
   return { ...marketCost(p), metal: 0 };
@@ -1394,7 +1568,7 @@ export function cancelJob(state: GameState, jobId: string): GameState {
   const place = TERRITORY_BY_ID[job.territoryId]?.name ?? job.territoryId;
   const label = isTrainKind(job.kind)
     ? job.kind === "beast"
-      ? beastOf(p.empire).name
+      ? beastOfLand(job.territoryId).name
       : UNIT_LABEL[job.kind]
     : job.kind === "castle"
       ? "walls"
@@ -1414,14 +1588,15 @@ export function cancelMarch(state: GameState, marchId: string): GameState {
   const order = next.marches[i]!;
   const from = next.territories[order.from];
   if (!from) return state;
-  mergeHost(from, hostFromOrder(order), from);
+  mergeHost(from, hostFromOrder(order), from, order.beastHouse);
   from.rams = (from.rams ?? 0) + (order.rams ?? 0);
   from.catapults = (from.catapults ?? 0) + (order.catapults ?? 0);
   from.ladders = (from.ladders ?? 0) + (order.ladders ?? 0);
   from.towers = (from.towers ?? 0) + (order.towers ?? 0);
   if (order.ships) from.ships += order.ships;
+  if (order.warships) from.warships = (from.warships ?? 0) + order.warships;
   next.marches.splice(i, 1);
-  log(next, `${empireOf(p.empire).name} recalls the column bound for ${TERRITORY_BY_ID[order.to]!.name}.`);
+  log(next, `${empireOf(p.empire).name} recalls the column bound for ${placeName(order.to)}.`);
   return next;
 }
 
@@ -1459,6 +1634,8 @@ export function raiseWorks(state: GameState, territoryId: string, kind: JobKind)
   if (kind === "road") return buildRoad(state, territoryId);
   if (kind === "farm") return buildFarm(state, territoryId);
   if (isSiegeKind(kind)) return buildSiege(state, territoryId, kind);
+  if (kind === "warship") return trainWarship(state, territoryId);
+  if (kind === "ship") return buildShip(state, territoryId);
   return buildShip(state, territoryId);
 }
 
@@ -1567,7 +1744,21 @@ export function buildShip(state: GameState, territoryId: string): GameState {
   const cost = shipCost(p);
   if (!pay(p, cost.gold, cost.wood, cost.stone)) return state;
   enqueue(next, "ship", territoryId, 1, cost);
-  log(next, `${empireOf(p.empire).name} lays a keel at ${TERRITORY_BY_ID[territoryId]!.name}.`);
+  log(next, `${empireOf(p.empire).name} lays a ship at ${placeName(territoryId)}.`);
+  return next;
+}
+
+export function trainWarship(state: GameState, territoryId: string): GameState {
+  const next = clone(state);
+  const p = current(next);
+  const t = terr(next, territoryId);
+  if (isWater(territoryId)) return state;
+  const queued = jobsOfKind(next, territoryId, "warship").length;
+  if (t.owner !== p.id || !t.port || (t.warships ?? 0) + queued >= warshipsCap(t)) return state;
+  const cost = WARSHIP_COST;
+  if (!pay(p, cost.gold, cost.wood, cost.stone, cost.metal)) return state;
+  enqueue(next, "warship", territoryId, WARSHIP_TURNS, cost);
+  log(next, `${empireOf(p.empire).name} frames a warship at ${placeName(territoryId)} — two watches.`);
   return next;
 }
 
@@ -1663,8 +1854,8 @@ export function advanceJobs(state: GameState): GameState {
       if (job.kind === "knight") t.knights += 1;
       if (job.kind === "dragon") t.dragons = Math.min(DRAGON_CAP, t.dragons + 1);
       if (job.kind === "dragon") t.dragonTier = Math.max(t.dragonTier ?? 0, 1);
-      if (job.kind === "beast") t.beasts = (t.beasts ?? 0) + 1;
-      const beast = beastOf(playerOf(next, job.player).empire);
+      if (job.kind === "beast") addBeasts(t, 1, houseOfLand(job.territoryId));
+      const beast = job.kind === "beast" ? beastOfLand(job.territoryId) : beastOf(playerOf(next, job.player).empire);
       const label = job.kind === "beast" ? beast.name : UNIT_LABEL[job.kind];
       const place = TERRITORY_BY_ID[job.territoryId]!.name;
       log(next, `${place}: ${label} ready.`);
@@ -1698,6 +1889,7 @@ export function advanceJobs(state: GameState): GameState {
     }
     if (job.kind === "road") t.road = true;
     if (job.kind === "ship") t.ships += 1;
+    if (job.kind === "warship") t.warships = (t.warships ?? 0) + 1;
     if (job.kind === "ram") t.rams = Math.min(SIEGE_CAP, (t.rams ?? 0) + 1);
     if (job.kind === "catapult") {
       t.catapults = Math.min(SIEGE_CAP, (t.catapults ?? 0) + 1);
@@ -1723,12 +1915,16 @@ export function advanceJobs(state: GameState): GameState {
           ? "siege tower"
           : job.kind === "ram"
             ? "ram"
-            : job.kind;
+            : job.kind === "warship"
+            ? "warship"
+            : job.kind === "ship"
+              ? "ship"
+              : job.kind;
     const rank =
       job.kind === "port" || job.kind === "mine" || job.kind === "castle" || job.kind === "market" || job.kind === "farm"
         ? worksRank(t, job.kind)
         : 0;
-    const place = TERRITORY_BY_ID[job.territoryId]!.name;
+    const place = placeName(job.territoryId);
     log(next, `${place}: ${label}${rank > 1 && job.kind !== "castle" ? ` ${"I".repeat(rank)}` : ""} complete.`);
     pushEvent(next, {
       type: "build",
@@ -1745,7 +1941,7 @@ export function issueMarch(
   state: GameState,
   fromId: string,
   toId: string,
-  force: { levy: number; bowmen?: number; knights: number; dragons: number; beasts?: number },
+  force: { levy: number; bowmen?: number; knights: number; dragons: number; beasts?: number; ships?: number; warships?: number },
   siege?: Partial<SiegeStock>,
 ): GameState {
   const next = clone(state);
@@ -1767,32 +1963,50 @@ export function issueMarch(
     return state;
   }
   const sent = force.levy + sendBowmen + force.knights + force.dragons + sendBeasts;
-  if (sent < 1) return state;
+  const destWater = isWater(toId);
+  const fromWater = isWater(fromId);
+  const landAdj = !fromWater && !destWater && landNeighbors(fromId).includes(toId);
+  let sendShips = force.ships;
+  let sendWarships = force.warships;
+  if (sendShips == null) {
+    if (destWater) sendShips = sent > 0 ? 0 : from.ships > 0 ? 1 : 0;
+    else if (fromWater && !destWater) sendShips = 0;
+    else if (!landAdj) sendShips = 0;
+    else sendShips = 0;
+  }
+  if (sendWarships == null) {
+    if (destWater) sendWarships = sent > 0 ? 1 : 0;
+    else if (fromWater && !destWater) sendWarships = sent > 0 ? 1 : 0;
+    else if (!landAdj) sendWarships = 1;
+    else sendWarships = 0;
+  }
+  sendShips = Math.max(0, Math.min(sendShips, from.ships ?? 0));
+  sendWarships = Math.max(0, Math.min(sendWarships, from.warships ?? 0));
+  if (sent < 1 && sendShips < 1 && sendWarships < 1) return state;
+  if (sent > 0 && (destWater || fromWater) && sendWarships < 1) return state;
+  if (sent > 0 && !landAdj && !destWater && !fromWater && sendWarships < 1) return state;
   const legal = legalMarchTargets(next, fromId);
   if (!legal.includes(toId)) return state;
-
-  const seaHop = !landNeighbors(fromId).includes(toId);
-  let convoy = 0;
-  if (seaHop) {
-    if (!TERRITORY_BY_ID[fromId]?.coastal || from.ships < 1) return state;
-    from.ships -= 1;
-    convoy = 1;
-  }
 
   from.levy -= force.levy;
   from.bowmen = (from.bowmen ?? 0) - sendBowmen;
   from.knights -= force.knights;
   from.dragons -= force.dragons;
-  from.beasts = (from.beasts ?? 0) - sendBeasts;
+  const marchBeastHouse = takeBeasts(from, sendBeasts);
+  from.ships -= sendShips;
+  from.warships = (from.warships ?? 0) - sendWarships;
+  vacateIfEmpty(from);
 
-  const rams = Math.min(SIEGE_CAP, siege?.rams ?? 0, from.rams ?? 0);
-  const catapults = Math.min(SIEGE_CAP, siege?.catapults ?? 0, from.catapults ?? 0);
-  const ladders = Math.min(SIEGE_CAP, siege?.ladders ?? 0, from.ladders ?? 0);
-  const towers = Math.min(SIEGE_CAP, siege?.towers ?? 0, from.towers ?? 0);
-  from.rams = (from.rams ?? 0) - rams;
-  from.catapults = (from.catapults ?? 0) - catapults;
-  from.ladders = (from.ladders ?? 0) - ladders;
-  from.towers = (from.towers ?? 0) - towers;
+  const rams = destWater ? 0 : Math.min(SIEGE_CAP, siege?.rams ?? 0, from.rams ?? 0);
+  const catapults = destWater ? 0 : Math.min(SIEGE_CAP, siege?.catapults ?? 0, from.catapults ?? 0);
+  const ladders = destWater ? 0 : Math.min(SIEGE_CAP, siege?.ladders ?? 0, from.ladders ?? 0);
+  const towers = destWater ? 0 : Math.min(SIEGE_CAP, siege?.towers ?? 0, from.towers ?? 0);
+  if (!destWater) {
+    from.rams = (from.rams ?? 0) - rams;
+    from.catapults = (from.catapults ?? 0) - catapults;
+    from.ladders = (from.ladders ?? 0) - ladders;
+    from.towers = (from.towers ?? 0) - towers;
+  }
 
   const order: MarchOrder = {
     id: `m${next.nextJobId++}`,
@@ -1808,13 +2022,15 @@ export function issueMarch(
     catapults,
     ladders,
     towers,
-    ships: convoy,
+    ships: sendShips,
+    warships: sendWarships,
     remaining: 1,
+    beastHouse: marchBeastHouse,
   };
   next.marches.push(order);
-  const fromName = TERRITORY_BY_ID[fromId]!.name;
-  const toName = TERRITORY_BY_ID[toId]!.name;
-  const verb = to.owner === player ? "marches for" : convoy ? "sails on" : "marches on";
+  const fromName = placeName(fromId);
+  const toName = placeName(toId);
+  const verb = to.owner === player ? "makes for" : destWater || sendWarships > 0 || sendShips > 0 ? "sails on" : "marches on";
   log(next, `${empireOf(playerOf(next, player).empire).name} ${verb} ${toName} from ${fromName} — they arrive next watch.`);
   pushEvent(next, {
     type: "march",
@@ -1845,12 +2061,19 @@ function settleMarch(state: GameState, order: MarchOrder) {
   const from = state.territories[order.from];
   const to = state.territories[order.to];
   if (!from || !to) return;
+  if (isWater(order.to)) {
+    settleWaterArrival(state, order);
+    return;
+  }
   const force = hostFromOrder(order);
-  const toName = TERRITORY_BY_ID[order.to]!.name;
-  const fromName = TERRITORY_BY_ID[order.from]!.name;
+  const toName = placeName(order.to);
+  const fromName = placeName(order.from);
   if (to.owner === order.player) {
-    mergeHost(to, force, from);
+    mergeHost(to, force, from, order.beastHouse);
     if (order.ships) berthShip(from, to);
+    if (order.warships) {
+      for (let i = 0; i < order.warships; i++) berthWarship(from, to);
+    }
     log(state, `${empireOf(playerOf(state, order.player).empire).name} arrives in ${toName}.`);
     pushEvent(state, {
       type: "march",
@@ -1879,7 +2102,119 @@ function settleMarch(state: GameState, order: MarchOrder) {
   Object.assign(state, fought);
 }
 
-function mergeHost(to: TerritoryState, force: HostForce, overflow: TerritoryState) {
+function dockFleet(from: TerritoryState, to: TerritoryState, ships: number, warships: number) {
+  for (let i = 0; i < ships; i++) berthShip(from, to);
+  for (let i = 0; i < warships; i++) berthWarship(from, to);
+}
+
+function settleWaterArrival(state: GameState, order: MarchOrder) {
+  const from = state.territories[order.from];
+  const to = state.territories[order.to];
+  if (!from || !to) return;
+  const force = hostFromOrder(order);
+  const sendShips = order.ships ?? 0;
+  const sendWarships = order.warships ?? 0;
+  const toName = placeName(order.to);
+  const house = empireOf(playerOf(state, order.player).empire).name;
+
+  if (to.owner === order.player || to.owner === "open") {
+    mergeHost(to, force, from, order.beastHouse);
+    to.ships = (to.ships ?? 0) + sendShips;
+    to.warships = (to.warships ?? 0) + sendWarships;
+    to.owner = order.player;
+    log(state, `${house} occupies ${toName}.`);
+    pushEvent(state, {
+      type: "march",
+      player: order.player,
+      fromId: order.from,
+      toId: order.to,
+      text: `Fleet occupies ${toName}.`,
+    });
+    vacateIfEmpty(from);
+    vacateIfEmpty(to);
+    return;
+  }
+
+  const support: TerritoryState[] = [];
+  for (const nid of hexNeighbors(order.to)) {
+    if (!isWater(nid)) continue;
+    const n = state.territories[nid];
+    if (!n || n.owner === order.player || n.owner === "open") continue;
+    if ((n.warships ?? 0) > 0) support.push(n);
+  }
+  const destWs = to.warships ?? 0;
+  const contested = destWs > 0 || support.length > 0;
+
+  if (!contested) {
+    const taken = to.ships ?? 0;
+    to.levy = force.levy;
+    to.bowmen = force.bowmen ?? 0;
+    to.knights = force.knights;
+    to.dragons = force.dragons;
+    to.beasts = 0;
+    to.beastHouse = undefined;
+    if ((force.beasts ?? 0) > 0 && order.beastHouse) addBeasts(to, force.beasts ?? 0, order.beastHouse);
+    to.ships = sendShips + taken;
+    to.warships = sendWarships;
+    to.owner = order.player;
+    log(state, taken > 0 ? `${house} takes ${toName} and seizes ${taken} ship${taken === 1 ? "" : "s"}.` : `${house} takes ${toName}.`);
+    vacateIfEmpty(from);
+    return;
+  }
+
+  const atkBeast = (force.beasts ?? 0) > 0 ? beastOf(order.beastHouse ?? houseOfLand(order.from)) : { atk: 0, def: 0 };
+  const defBeast = (to.beasts ?? 0) > 0 ? beastOfTerritory(to) : { atk: 0, def: 0 };
+  const atk =
+    sendWarships * WARSHIP_ATK +
+    forceStrength(force, atkBeast.atk, flameOf(state, order.player));
+  const def =
+    destWs * WARSHIP_DEF +
+    (to.ships ?? 0) * 1 +
+    forceDefense(to, defBeast.def) +
+    support.reduce((n, t) => n + (t.warships ?? 0) * WARSHIP_SUPPORT, 0);
+
+  if (atk > def) {
+    to.levy = force.levy;
+    to.bowmen = force.bowmen ?? 0;
+    to.knights = force.knights;
+    to.dragons = force.dragons;
+    to.beasts = 0;
+    to.beastHouse = undefined;
+    if ((force.beasts ?? 0) > 0 && order.beastHouse) addBeasts(to, force.beasts ?? 0, order.beastHouse);
+    to.ships = sendShips;
+    to.warships = sendWarships;
+    to.owner = order.player;
+    for (const n of support) {
+      n.warships = Math.max(0, (n.warships ?? 0) - 1);
+      if ((n.warships ?? 0) < 1 && standing(n) > 0) {
+        n.levy = 0;
+        n.bowmen = 0;
+        n.knights = 0;
+        n.dragons = 0;
+        n.beasts = 0;
+        n.beastHouse = undefined;
+      }
+      vacateIfEmpty(n);
+    }
+    log(state, `${house} wins the waters at ${toName}. The rival fleet is sunk.`);
+  } else {
+    const lost = Math.min(destWs, Math.max(1, Math.floor(sendWarships / 2) || 1));
+    to.warships = Math.max(0, destWs - lost);
+    if ((to.warships ?? 0) < 1) {
+      to.levy = 0;
+      to.bowmen = 0;
+      to.knights = 0;
+      to.dragons = 0;
+      to.beasts = 0;
+      to.beastHouse = undefined;
+    }
+    vacateIfEmpty(to);
+    log(state, `${house} is thrown back from ${toName}. The fleet and any host aboard are sunk.`);
+  }
+  vacateIfEmpty(from);
+}
+
+function mergeHost(to: TerritoryState, force: HostForce, overflow: TerritoryState, beastHouse?: EmpireId) {
   to.levy += force.levy;
   to.bowmen = (to.bowmen ?? 0) + (force.bowmen ?? 0);
   to.knights += force.knights;
@@ -1888,12 +2223,21 @@ function mergeHost(to: TerritoryState, force: HostForce, overflow: TerritoryStat
     overflow.dragons += to.dragons - DRAGON_CAP;
     to.dragons = DRAGON_CAP;
   }
-  to.beasts = (to.beasts ?? 0) + (force.beasts ?? 0);
+  if ((force.beasts ?? 0) > 0) addBeasts(to, force.beasts ?? 0, beastHouse ?? beastHouseOf(to));
 }
 
 function resolveArrival(state: GameState, order: MarchOrder): GameState {
   const force = hostFromOrder(order);
-  return resolveAttackWithHost(state, order.from, order.to, force, order.ships, order.player, Boolean(order.tribal));
+  return resolveAttackWithHost(
+    state,
+    order.from,
+    order.to,
+    force,
+    order.warships || order.ships,
+    order.player,
+    Boolean(order.tribal),
+    order.beastHouse,
+  );
 }
 
 function resolveAttackWithHost(
@@ -1904,6 +2248,7 @@ function resolveAttackWithHost(
   convoy: number,
   attacker: PlayerId,
   tribal = false,
+  atkBeastHouse?: EmpireId,
 ): GameState {
   const next = clone(state);
   const to = terr(next, toId);
@@ -1921,14 +2266,15 @@ function resolveAttackWithHost(
     tribalCamp: isBarbarian(to.owner),
     defHost: defendingHost(to),
     prevOwner: to.owner,
-    destCont: TERRITORY_BY_ID[toId]!.continent,
-    brokeContinent: to.owner !== "barbarian" && holdsContinent(next, to.owner, TERRITORY_BY_ID[toId]!.continent),
-    wasCapitol: to.owner !== "barbarian" && empireOf(playerOf(next, to.owner).empire).capitol === toId,
+    destCont: TERRITORY_BY_ID[toId]?.continent ?? "eu",
+    brokeContinent: isPlayerOwner(to.owner) && holdsContinent(next, to.owner, TERRITORY_BY_ID[toId]!.continent),
+    wasCapitol: isPlayerOwner(to.owner) && empireOf(playerOf(next, to.owner).empire).capitol === toId,
     continentsBefore: continentsHeld(next, player).length,
     player,
     tribal,
     watch,
     fieldLevy: to.levy,
+    atkBeastHouse: atkBeastHouse ?? houseOfLand(fromId),
   };
   const rng = mulberry32((next.seed + next.clock.turn * 997 + (force.levy + sendBowmen + force.knights + force.dragons + sendBeasts) * 13 + toId.length) >>> 0);
   let aLevy = force.levy;
@@ -1950,8 +2296,9 @@ function resolveAttackWithHost(
     dDragons = hit.dragons;
     dBeasts = hit.beasts;
   }
-  const atkBeast = tribal ? { atk: 0, def: 0 } : beastOf(playerOf(next, player).empire);
-  const defBeast = beastOfOwner(next, to.owner);
+  const flameAtk = flameOf(next, player);
+  const atkBeast = tribal ? { atk: 0, def: 0 } : beastOf(meta.atkBeastHouse ?? houseOfLand(fromId));
+  const defBeast = (to.beasts ?? 0) > 0 ? beastOfTerritory(to) : beastOfOwner(next, to.owner);
   let works = spendSiegeOnWorks(
     { ...from, rams: 0, catapults: 0, ladders: 0, towers: 0 },
     worksDefense(to),
@@ -1962,10 +2309,11 @@ function resolveAttackWithHost(
   const aliveDef = () => dLevy + dBowmen + dKnights + dDragons + dBeasts;
   while (guard-- > 0 && aliveAtk() > 0 && aliveDef() > 0) {
     const knightBonus = aKnights > 0 && dLevy > 0 ? aKnights * 2 : 0;
+    const bonus = flameAtk ? FLAME_ATK : 0;
     const atkStr =
-      aLevy * UNIT_ATK.levy +
-      aBowmen * UNIT_ATK.bowman +
-      aKnights * UNIT_ATK.knight +
+      aLevy * (UNIT_ATK.levy + bonus) +
+      aBowmen * (UNIT_ATK.bowman + bonus) +
+      aKnights * (UNIT_ATK.knight + bonus) +
       knightBonus +
       aDragons * UNIT_ATK.dragon +
       aBeasts * atkBeast.atk;
@@ -2016,18 +2364,19 @@ export function settleArrival(
     fromId: order.from,
     toId: order.to,
     force,
-    convoy: order.ships,
+    convoy: order.warships || order.ships,
     tribalCamp: isBarbarian(to.owner),
     defHost: defendingHost(to),
     prevOwner: to.owner,
-    destCont: TERRITORY_BY_ID[order.to]!.continent,
-    brokeContinent: to.owner !== "barbarian" && holdsContinent(next, to.owner, TERRITORY_BY_ID[order.to]!.continent),
-    wasCapitol: to.owner !== "barbarian" && empireOf(playerOf(next, to.owner).empire).capitol === order.to,
+    destCont: TERRITORY_BY_ID[order.to]?.continent ?? "eu",
+    brokeContinent: isPlayerOwner(to.owner) && holdsContinent(next, to.owner, TERRITORY_BY_ID[order.to]!.continent),
+    wasCapitol: isPlayerOwner(to.owner) && empireOf(playerOf(next, to.owner).empire).capitol === order.to,
     continentsBefore: continentsHeld(next, player).length,
     player,
     tribal: Boolean(order.tribal),
     watch,
     fieldLevy: to.levy,
+    atkBeastHouse: order.beastHouse ?? houseOfLand(order.from),
   };
   next.arrivals = (next.arrivals ?? []).filter((a) => a.id !== order.id);
   return finishAssault(
@@ -2052,7 +2401,7 @@ export function abortArrival(state: GameState, order: MarchOrder): GameState {
   const force = hostFromOrder(order);
   if (order.tribal) {
     const camp = next.territories[order.from];
-    if (camp) mergeHost(camp, force, camp);
+    if (camp) mergeHost(camp, force, camp, order.beastHouse);
     return next;
   }
   const from = next.territories[order.from];
@@ -2060,7 +2409,7 @@ export function abortArrival(state: GameState, order: MarchOrder): GameState {
     from && from.owner === order.player ? order.from : ownedIds(next, order.player)[0];
   if (!dumpId) return next;
   const home = terr(next, dumpId);
-  mergeHost(home, force, home);
+  mergeHost(home, force, home, order.beastHouse);
   if (order.ships) home.ships += order.ships;
   home.rams = (home.rams ?? 0) + (order.rams ?? 0);
   home.catapults = (home.catapults ?? 0) + (order.catapults ?? 0);
@@ -2115,6 +2464,7 @@ export function playCard(state: GameState, card: CardId, territoryId?: string): 
       t.knights = hit.knights;
       t.dragons = hit.dragons;
       t.beasts = hit.beasts;
+      if ((t.beasts ?? 0) <= 0) t.beastHouse = undefined;
       log(next, `${empireOf(p.empire).name} raids ${TERRITORY_BY_ID[territoryId]!.name}.`);
     }
   } else if (card === "wall" && territoryId) {
@@ -2137,16 +2487,200 @@ export function draftPick(state: GameState, territoryId: string): GameState {
   return next;
 }
 
-export function rankPlayers(state: GameState) {
+export const RANK_KEYS = ["merchant", "trader", "popular", "protector", "warlord", "colonizer", "emperor"] as const;
+export type RankKey = (typeof RANK_KEYS)[number];
+
+export const RANK_LABEL: Record<RankKey, string> = {
+  merchant: "Merchant",
+  trader: "Trader",
+  popular: "Popular",
+  protector: "Protector",
+  warlord: "Warlord",
+  colonizer: "Colonizer",
+  emperor: "Emperor",
+};
+
+export const RANK_HINT: Record<RankKey, string> = {
+  merchant: "Gold in the vault plus gold generated next watch.",
+  trader: "Silver, timber, stone, metal and grain — vault plus next tribute.",
+  popular: "Citizens across the realm.",
+  protector: "City walls, keeps and works.",
+  warlord: "The host in the field and columns still on the road.",
+  colonizer: "Lands owned.",
+  emperor: "Capitals held. Seven thrones end the age.",
+};
+
+export interface EmpireStats {
+  merchant: number;
+  trader: number;
+  popular: number;
+  protector: number;
+  warlord: number;
+  colonizer: number;
+  emperor: number;
+}
+
+export const SCORE_WEIGHT: Record<RankKey, number> = {
+  merchant: 1,
+  trader: 1,
+  popular: 6,
+  protector: 2,
+  warlord: 4,
+  colonizer: 16,
+  emperor: 100,
+};
+
+const SCORE_PER_LEVEL = 80;
+
+function armySize(state: GameState, player: PlayerId): number {
+  let n = 0;
+  for (const id of ownedIds(state, player)) n += standing(terr(state, id));
+  for (const m of state.marches ?? []) {
+    if (m.player === player && !m.tribal) n += hostTotal(m);
+  }
+  for (const m of state.arrivals ?? []) {
+    if (m.player === player && !m.tribal) n += hostTotal(m);
+  }
+  return n;
+}
+
+function realmDefense(state: GameState, player: PlayerId): number {
+  let n = 0;
+  for (const id of ownedIds(state, player)) n += worksDefense(terr(state, id));
+  return n;
+}
+
+export function empireStats(state: GameState, player: PlayerId): EmpireStats {
+  const p = playerOf(state, player);
+  const inc = incomeFor(state, player);
+  return {
+    merchant: p.gold + inc.gold,
+    trader: p.silver + p.wood + p.stone + p.metal + p.food + inc.silver + inc.wood + inc.stone + inc.metal + inc.food,
+    popular: realmPopulation(state, player),
+    protector: realmDefense(state, player),
+    warlord: armySize(state, player),
+    colonizer: ownedIds(state, player).length,
+    emperor: capitalsHeld(state, player).length,
+  };
+}
+
+export function empireScore(stats: EmpireStats): number {
+  let n = 0;
+  for (const key of RANK_KEYS) n += stats[key] * SCORE_WEIGHT[key];
+  return n;
+}
+
+export function empireLevel(score: number): number {
+  return Math.max(1, Math.floor(score / SCORE_PER_LEVEL));
+}
+
+function competitionRanks(values: number[]): number[] {
+  const order = values.map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v || a.i - b.i);
+  const ranks = Array<number>(values.length).fill(1);
+  let i = 0;
+  while (i < order.length) {
+    let j = i + 1;
+    while (j < order.length && order[j]!.v === order[i]!.v) j++;
+    const rank = i + 1;
+    for (let k = i; k < j; k++) ranks[order[k]!.i] = rank;
+    i = j;
+  }
+  return ranks;
+}
+
+export interface EmpireStanding {
+  id: PlayerId;
+  empire: EmpireId;
+  continents: number;
+  lands: number;
+  capitals: number;
+  score: number;
+  level: number;
+  stats: EmpireStats;
+  ranks: Record<RankKey, number> & { overall: number };
+}
+
+export function rankPlayers(state: GameState): EmpireStanding[] {
   const alive = state.players.filter((p) => p.alive);
-  return alive
-    .map((p) => ({
+  const rows = alive.map((p) => {
+    const stats = empireStats(state, p.id);
+    const score = empireScore(stats);
+    return {
       id: p.id,
       empire: p.empire,
       continents: continentsHeld(state, p.id).length,
-      lands: ownedIds(state, p.id).length,
-    }))
-    .sort((a, b) => b.continents - a.continents || b.lands - a.lands);
+      lands: stats.colonizer,
+      capitals: stats.emperor,
+      score,
+      level: empireLevel(score),
+      stats,
+      ranks: {
+        merchant: 1,
+        trader: 1,
+        popular: 1,
+        protector: 1,
+        warlord: 1,
+        colonizer: 1,
+        emperor: 1,
+        overall: 1,
+      } as EmpireStanding["ranks"],
+    };
+  });
+  const overall = competitionRanks(rows.map((r) => r.score));
+  for (const key of RANK_KEYS) {
+    const placed = competitionRanks(rows.map((r) => r.stats[key]));
+    for (let i = 0; i < rows.length; i++) rows[i]!.ranks[key] = placed[i]!;
+  }
+  for (let i = 0; i < rows.length; i++) rows[i]!.ranks.overall = overall[i]!;
+  return rows.sort((a, b) => b.score - a.score || b.capitals - a.capitals || b.lands - a.lands || a.id - b.id);
+}
+
+export function ordinal(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
+export function rankShiftLines(before: GameState, after: GameState): string[] {
+  const prev = new Map(rankPlayers(before).map((r) => [r.empire, r] as const));
+  const next = rankPlayers(after);
+  const yours: string[] = [];
+  const others: string[] = [];
+  const you = next.find((r) => r.id === 0);
+  for (const row of next) {
+    const was = prev.get(row.empire);
+    if (!was) continue;
+    const name = empireOf(row.empire).name;
+    const mine = row.id === 0;
+    const bucket = mine ? yours : others;
+    if (was.ranks.overall !== row.ranks.overall) {
+      const dir = row.ranks.overall < was.ranks.overall ? "rose" : "fell";
+      bucket.push(`${name} ${dir} to ${ordinal(row.ranks.overall)} overall`);
+    }
+    if (was.ranks.emperor !== row.ranks.emperor) {
+      const dir = row.ranks.emperor < was.ranks.emperor ? "rose" : "fell";
+      bucket.push(`${name} ${dir} to ${ordinal(row.ranks.emperor)} Emperor`);
+    }
+  }
+  const youWas = you ? prev.get(you.empire) : undefined;
+  if (you && youWas) {
+    for (const key of RANK_KEYS) {
+      if (key === "emperor") continue;
+      if (you.ranks[key] === youWas.ranks[key]) continue;
+      const dir = you.ranks[key] < youWas.ranks[key] ? "rose" : "fell";
+      yours.push(`${RANK_LABEL[key]} ${dir} to ${ordinal(you.ranks[key])}`);
+    }
+  }
+  return [...yours, ...others].slice(0, 6);
 }
 
 export function checkVictory(state: GameState): GameState {
@@ -2159,10 +2693,10 @@ export function checkVictory(state: GameState): GameState {
     return next;
   }
   for (const p of alive) {
-    if (continentsHeld(next, p.id).length >= WIN_CONTINENTS) {
+    if (capitalsHeld(next, p.id).length >= WIN_CAPITALS) {
       next.phase = "gameover";
       next.winner = p.id;
-      log(next, `${empireOf(p.empire).name} holds ${WIN_CONTINENTS} regions.`);
+      log(next, `${empireOf(p.empire).name} holds ${WIN_CAPITALS} capitals.`);
       return next;
     }
   }
@@ -2179,6 +2713,7 @@ function collectIncome(state: GameState, player: PlayerId) {
   p.stone += inc.stone;
   p.metal += inc.metal;
   p.food += inc.food;
+  if (inc.flame) p.flame = true;
   const need = foodNeed(state, player);
   p.food -= need;
   tickPopulation(state, player, p.food);
@@ -2296,7 +2831,7 @@ function tickTribes(state: GameState) {
     }
   }
   const humanSeat = state.players.find((p) => p.human)?.id;
-  const imperial = Object.values(state.territories).filter((t) => t.owner !== "barbarian");
+  const imperial = Object.values(state.territories).filter((t) => isPlayerOwner(t.owner) && !isWater(t.id));
   for (const target of shuffle(rng, imperial)) {
     if (rng() > 0.4) continue;
     const raiders = landNeighbors(target.id)
@@ -2333,6 +2868,7 @@ function tickTribes(state: GameState) {
         ladders: 0,
         towers: 0,
         ships: 0,
+        warships: 0,
         remaining: 0,
         tribal: true,
       });
@@ -2360,10 +2896,11 @@ function tickTribes(state: GameState) {
       target.knights = 0;
       target.dragons = 0;
       target.beasts = 0;
+      target.beastHouse = undefined;
       target.ships = 0;
       setFort(target, 0);
       target.pressure = 0;
-      if (prev !== "barbarian" && ownedIds(state, prev).length === 0) {
+      if (isPlayerOwner(prev) && ownedIds(state, prev).length === 0) {
         playerOf(state, prev).alive = false;
         log(state, `${empireOf(playerOf(state, prev).empire).name} is broken.`);
       }
@@ -2374,6 +2911,7 @@ function tickTribes(state: GameState) {
       target.knights = hit.knights;
       target.dragons = hit.dragons;
       target.beasts = hit.beasts;
+      if ((target.beasts ?? 0) <= 0) target.beastHouse = undefined;
       tribe.levy += sendN;
       log(state, `Tribes raid ${place} from ${camp}.`);
     }
@@ -2426,14 +2964,17 @@ export function watchReport(before: GameState, after: GameState): string[] {
     const prev = before.territories[id];
     const nextT = after.territories[id];
     if (!prev || !nextT || prev.owner === nextT.owner) continue;
-    const name = TERRITORY_BY_ID[id]!.name;
+    const name = placeName(id);
     if (prev.owner === 0) {
       if (nextT.owner === "barbarian") lost.push(`Tribes overrun ${name}.`);
+      else if (nextT.owner === "open") lost.push(`The fleet leaves ${name}.`);
       else lost.push(`${empireOf(after.players[nextT.owner]!.empire).name} takes ${name} from you.`);
     } else if (nextT.owner === 0) {
       gained.push(`You hold ${name}.`);
     } else if (nextT.owner === "barbarian") {
       overruns.push(`Tribes overrun ${name}.`);
+    } else if (nextT.owner === "open") {
+      continue;
     } else {
       takes.push(`${empireOf(after.players[nextT.owner]!.empire).name} takes ${name}.`);
     }

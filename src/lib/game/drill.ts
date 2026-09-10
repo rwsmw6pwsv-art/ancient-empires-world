@@ -4,10 +4,12 @@ import { createNewGame } from "./engine";
 import { openRaid, type RaidState } from "./raid";
 import type { EmpireId, GameState, HostForce, SiegeStock } from "./types";
 import { TERRITORY_BY_ID } from "./world";
+import type { BattleSide } from "./raid";
 
 export interface DrillSetup {
   empire: EmpireId;
   foe?: EmpireId;
+  side?: BattleSide;
   walls: number;
   outer: number;
   keep: number;
@@ -23,6 +25,7 @@ export interface DrillSetup {
 export const DRILL_DEFAULT: DrillSetup = {
   empire: "sumer",
   foe: "egypt",
+  side: "atk",
   walls: 2,
   outer: 1,
   keep: 1,
@@ -119,10 +122,13 @@ export function drillFoeOf(setup: Pick<DrillSetup, "empire" | "foe">): EmpireId 
 }
 
 export function openDrillRaid(setup: DrillSetup): { state: GameState; raid: RaidState } | null {
+  const side: BattleSide = setup.side ?? "atk";
   const state = createNewGame({ empire: setup.empire, difficulty: "easy", seed: 9001 + setup.walls * 17 + setup.moats * 31 });
-  const fromId = empireOf(setup.empire).capitol;
   const foe = drillFoeOf(setup);
-  const destId = empireOf(foe).capitol;
+  const youCap = empireOf(setup.empire).capitol;
+  const foeCap = empireOf(foe).capitol;
+  const fromId = side === "atk" ? youCap : foeCap;
+  const destId = side === "atk" ? foeCap : youCap;
   if (!destId || destId === fromId) return null;
   const to = state.territories[destId]!;
   to.castle = setup.walls > 0 || setup.keep > 0;
@@ -163,7 +169,7 @@ export function openDrillRaid(setup: DrillSetup): { state: GameState; raid: Raid
   if (setup.dragonTier >= 3) state.players[0]!.rareDragons = 1;
   else if (setup.dragonTier >= 2) state.players[0]!.specialDragons = 1;
 
-  const raid = openRaid(state, fromId, destId, { ...setup.force }, { ...setup.siege }, "atk");
+  const raid = openRaid(state, fromId, destId, { ...setup.force }, { ...setup.siege }, side);
   if (!raid) return null;
   raid.camp = setup.walls <= 0 && setup.outer <= 0 && setup.keep <= 0;
   return { state, raid };

@@ -1,6 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <circle cx="32" cy="32" r="24" fill="#7d8794"/>
-  <circle cx="32" cy="32" r="18" fill="#c5ced8"/>
-  <circle cx="32" cy="30" r="12" fill="#eef2f6"/>
-  <path d="M32 22v20M26 32h12" stroke="#9aa4b2" stroke-width="3" stroke-linecap="round"/>
+  <!-- Three coins in a stack, each a round face on a thick rim. -->
+  <g stroke="#2a323c" stroke-width="2.2">
+    <circle cx="32" cy="46" r="14" fill="#6d7886"/>
+    <circle cx="32" cy="40" r="14" fill="#cfd8e2"/>
+    <circle cx="32" cy="32" r="14" fill="#7d8794"/>
+    <circle cx="32" cy="26" r="14" fill="#dbe3ec"/>
+    <circle cx="32" cy="18" r="14" fill="#8b96a4"/>
+    <circle cx="32" cy="12" r="14" fill="#f4f7fb"/>
+  </g>
+  <circle cx="32" cy="12" r="8" fill="none" stroke="#9aa8b8" stroke-width="1.8"/>
+  <circle cx="26" cy="8" r="3" fill="#ffffff" opacity="0.85"/>
 </svg>

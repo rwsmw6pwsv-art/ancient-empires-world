@@ -27,7 +27,6 @@ import {
   TERRAIN_TEXTURE,
   UNIT_SHEET_SRC,
   WORLD_SRC,
-  beastOf,
 } from "@/lib/game/landscape";
 import {
   RAID_SPEEDS,
@@ -35,6 +34,7 @@ import {
   KIND_ORDERS,
   ageRaidAlerts,
   autoDeployAll,
+  autoDeployDef,
   beginAssault,
   canDeployAt,
   chargeWave,
@@ -43,17 +43,22 @@ import {
   deployTroop,
   heldCount,
   hostTotal,
+  orderLot,
+  ordersFor,
   pickRaidKind,
+  raidArmyHp,
   raidBattleStatus,
   raidKindsLeft,
   raidOutcome,
   runRaid,
+  setOrderLot,
   setRaidOrder,
   stepRaid,
   type RaidKind,
   type RaidOrder,
   type RaidOutcome,
   type RaidState,
+  type RaidArmyHp,
 } from "@/lib/game/raid";
 import type { GameState, HostForce } from "@/lib/game/types";
 import { SIEGE_LABEL, UNIT_LABEL_PLURAL } from "@/lib/game/types";
@@ -124,14 +129,16 @@ function OrderButtons({
   kind,
   current,
   onPick,
+  side = "atk",
 }: {
   kind: RaidKind;
   current: RaidOrder;
   onPick: (id: RaidOrder) => void;
+  side?: "atk" | "def";
 }) {
   return (
     <div className="raid-tactics" role="group" aria-label="Troop order">
-      {(KIND_ORDERS[kind] ?? []).map((t) => (
+      {(ordersFor(side)[kind] ?? []).map((t) => (
         <button
           key={t.id}
           type="button"
@@ -147,31 +154,83 @@ function OrderButtons({
   );
 }
 
+function OrderLots({
+  kind,
+  current,
+  lots,
+  onPick,
+  onLot,
+  side = "atk",
+}: {
+  kind: RaidKind;
+  current: RaidOrder;
+  lots: Partial<Record<RaidOrder, number>>;
+  onPick: (id: RaidOrder) => void;
+  onLot: (id: RaidOrder, n: number) => void;
+  side?: "atk" | "def";
+}) {
+  return (
+    <div className="raid-lots" role="group" aria-label="How many">
+      {(ordersFor(side)[kind] ?? []).map((t) => (
+        <div key={t.id} className={cn("raid-lot", current === t.id && "is-picked")}>
+          <button type="button" title={t.hint} onClick={() => onPick(t.id)} className="raid-lot-pick">
+            <OrderIcon id={t.id} />
+            {t.label}
+          </button>
+          <button
+            type="button"
+            className="raid-lot-step"
+            aria-label={`Fewer ${t.label}`}
+            onClick={() => onLot(t.id, Math.max(0, (lots[t.id] ?? 0) - 1))}
+          >
+            <Minus className="size-3" />
+          </button>
+          <span className="raid-lot-n tabular-nums">{lots[t.id] ?? 0}</span>
+          <button
+            type="button"
+            className="raid-lot-step"
+            aria-label={`More ${t.label}`}
+            onClick={() => onLot(t.id, (lots[t.id] ?? 0) + 1)}
+          >
+            <Plus className="size-3" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function battleTips(raid: RaidState, watching: boolean): string[] {
-  if (watching) return ["Hold the walls. Archers and scorpions stand on the towers. Levy at the gate sally if the walls break."];
+  if (watching && raid.phase === "deploy") {
+    return [
+      "Tap inside the walls to place the garrison. Split each kind with the counts — some at the gate, some at the first breach, some at the keep.",
+      "The keep must fall for the assault to take the land. Dragons can hold the gate, the first breach, or the keep.",
+    ];
+  }
+  if (watching) return ["Hold the walls. Knights ride the first breach unless you posted them at the keep. A dragon hunts theirs, then the largest group — or holds the post you gave it."];
   if (raid.phase === "over") {
-    return [raid.keepDestroyed ? "The keep is yours. Leave the field to take the land." : "The assault broke. Survivors fall back next watch."];
+    return [raid.keepDestroyed ? "The keep is yours. Leave the field to take the land." : "The assault broke. The keep still stands. Survivors fall back next watch."];
   }
   const tips: string[] = [];
   if (raid.phase === "deploy") {
-    tips.push("Set orders before the charge. Hold keeps warriors, archers, knights, beasts, catapults or dragons for the next wave. Rams, towers and ladders always roll.");
+    tips.push("Set how many do each order, then tap the grass outside the walls. The keep must fall to take the land.");
     if (raid.stock.towers > 0) tips.push("Tap a siege tower to load warriors, archers, knights or beasts. It spills them over the wall.");
-    if (raid.stock.rams > 0) tips.push("Rams break the gate. Warriors and knights follow the ram, or ride ladders and towers.");
+    if (raid.stock.rams > 0) tips.push("Rams break the gate. Warriors and knights follow the ram, or ride ladders and towers, or drive for the keep.");
     else if (raid.stock.ladders > 0) tips.push("Ladders open a climb. Warriors follow them up. They do not knock the wall down.");
     else if (raid.stock.towers > 0) tips.push("A siege tower spills whoever you load onto it over the wall. Tap the tower to board.");
-    else if (raid.stock.catapults > 0) tips.push("Catapults chew a wall for a second entry (slower than a ram), or aim at the towers.");
-    else if (raid.stock.dragons > 0) tips.push("Dragons fly the city — they do not circle the walls. They hunt enemy dragons first, then scorpions.");
-    else if ((raid.stock.bowmen ?? 0) > 0) tips.push("Archers ride a siege tower or shoot nearby towers. Guard the ram if you send them to the gate.");
-    else if (raid.stock.beasts > 0) tips.push("Beasts punch a weak stretch of wall, drive the gate, or ride a tower over.");
-    else if (raid.stock.knights > 0) tips.push("Knights follow a ram or tower, then ride the garrison down.");
-    else tips.push("Warriors take the melee. Near a gate they strike it. Auto resolve if you would rather skip the field.");
+    else if (raid.stock.catapults > 0) tips.push("Catapults chew a wall, aim at towers, or hurl at the keep.");
+    else if (raid.stock.dragons > 0) tips.push("Dragons fly the city — they do not circle the walls. They hunt enemy dragons first, then scorpions, or burn the keep.");
+    else if ((raid.stock.bowmen ?? 0) > 0) tips.push("Archers ride a siege tower, shoot nearby towers, guard the ram, or aim at the keep.");
+    else if (raid.stock.beasts > 0) tips.push("Beasts punch a weak stretch of wall, drive the gate, ride a tower, or break for the keep.");
+    else if (raid.stock.knights > 0) tips.push("Knights follow a ram or tower, drive for the keep, then ride the garrison down.");
+    else tips.push("Warriors take the melee. Near a gate they strike it. Order them at the keep to drive the citadel.");
   } else {
     if (raidKindsLeft(raid).length > 0) tips.push("Tap the field to send one more of the selected host, or send the rest as a second wave.");
     else if (raid.tactic === "gate") tips.push("Drive the bridges and the gate. Rams chew the gate only.");
     else if (raid.tactic === "walls") tips.push("Beasts punch a weak stretch. Ladders scale. Catapults chew the ring.");
     else if (raid.tactic === "keep") tips.push("Once inside, drive for the citadel. Dragons can burn the keep from the air.");
     else if (raid.tactic === "scorpions") tips.push("Burn the scorpions first. They are the only ground engines that wound a dragon.");
-    else tips.push("Fifty percent destruction or a fallen keep is one star. Both is two. A razed village is three.");
+    else tips.push("The keep must fall to take the land. Fifty percent destruction is one star; the keep as well is two; a razed village is three.");
     const scorpion = raid.buildings.some((b) => b.kind === "scorpion" && b.hp > 0);
     if (scorpion && raid.units.some((u) => u.kind === "dragon" && u.hp > 0 && u.side === "atk")) {
       tips.push("A scorpion still stands. Keep the dragon off it or burn it first.");
@@ -220,11 +279,13 @@ export function BattleScreen({
   battle,
   onFinish,
   onCancel,
+  allowAbort = false,
 }: {
   state: GameState;
   battle: RaidState;
   onFinish: (outcome: RaidOutcome) => void;
   onCancel: (outcome: RaidOutcome | null) => void;
+  allowAbort?: boolean;
 }) {
   const initial = useRef(battle);
   const raidRef = useRef<RaidState>(cloneRaid(battle));
@@ -240,9 +301,8 @@ export function BattleScreen({
   const imgs = useRef<Record<string, HTMLImageElement>>({});
   const lastSfx = useRef({ stars: 0, keep: false, alert: "" });
 
-  const from = state.territories[battle.fromId]!;
-  const atkBeast = from.owner === "barbarian" ? null : beastOf(state.players[from.owner]!.empire);
-  const beastSrc = atkBeast ? BEAST_SRC[atkBeast.id] : null;
+  const atkBeastId = battle.beastId;
+  const beastSrc = atkBeastId ? BEAST_SRC[atkBeastId as keyof typeof BEAST_SRC] : null;
   const assets = usePreload("battle");
 
   useEffect(() => {
@@ -285,15 +345,6 @@ export function BattleScreen({
     bag.tower = loadImg(SIEGE_SRC.tower);
     if (beastSrc) bag.beast = loadImg(beastSrc);
   }, [assets.ready, battle.terrain, beastSrc]);
-
-  useEffect(() => {
-    if (!assets.ready) return;
-    const raid = raidRef.current;
-    if (raid.humanSide === "def" && raid.phase === "deploy") {
-      autoDeployAll(raid);
-      beginAssault(raid);
-    }
-  }, [assets.ready]);
 
   useEffect(() => {
     if (!assets.ready) return;
@@ -389,7 +440,7 @@ export function BattleScreen({
 
   function onField(clientX: number, clientY: number) {
     const raid = raidRef.current;
-    if (raid.humanSide !== "atk" || raid.phase === "over") return;
+    if (raid.phase === "over") return;
     const pt = worldAt(clientX, clientY);
     if (!pt) return;
     const kind = raid.selected;
@@ -403,8 +454,10 @@ export function BattleScreen({
   }
 
   const watching = battle.humanSide === "def";
+  const orderBook = ordersFor(battle.humanSide);
+  const beastCaption = watching ? (battle.defBeastName ?? battle.beastName) : battle.beastName;
   const kinds = KIND_ORDER.filter((k) => stockOf(initial.current, k) > 0 || stockOf(raidRef.current, k) > 0);
-  const orderKinds = kinds.filter((k) => (KIND_ORDERS[k] ?? []).length > 0);
+  const orderKinds = kinds.filter((k) => (orderBook[k] ?? []).length > 0);
   const outcome = hud.phase === "over" ? raidOutcome(raidRef.current) : null;
   const beastName = battle.beastName;
 
@@ -430,33 +483,36 @@ export function BattleScreen({
         }
       >
         <header className="raid-top">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="truncate font-display text-base text-fg sm:text-lg">
-              {battle.atkName} → {battle.defName}
-            </h2>
-            <button
-              type="button"
-              className={cn("raid-help", brief && "is-picked")}
-              aria-expanded={brief}
-              aria-controls="raid-brief"
-              title="How to fight"
-              onClick={() => setBrief((v) => !v)}
-            >
-              <CircleHelp className="size-4" />
-              <span className="sr-only">How to fight</span>
-            </button>
-          </div>
-          <div className="raid-meter">
-            <div className="flex items-center justify-end gap-2">
-              <div className="raid-stars" aria-label={`${hud.stars} stars`}>
-                {[0, 1, 2].map((i) => (
-                  <span key={i} className={cn("raid-star", hud.stars > i && "is-lit")} />
-                ))}
+          <div className="raid-top-row">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="truncate font-display text-base text-fg sm:text-lg">
+                {battle.atkName} → {battle.defName}
+              </h2>
+              <button
+                type="button"
+                className={cn("raid-help", brief && "is-picked")}
+                aria-expanded={brief}
+                aria-controls="raid-brief"
+                title="How to fight"
+                onClick={() => setBrief((v) => !v)}
+              >
+                <CircleHelp className="size-4" />
+                <span className="sr-only">How to fight</span>
+              </button>
+            </div>
+            <div className="raid-meter">
+              <div className="flex items-center justify-end gap-2">
+                <div className="raid-stars" aria-label={`${hud.stars} stars`}>
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} className={cn("raid-star", hud.stars > i && "is-lit")} />
+                  ))}
+                </div>
+                <p className="font-display text-base tabular-nums text-fg sm:text-lg">{hud.destruction}%</p>
+                <p className="text-[10px] tracking-[0.16em] text-muted uppercase">{fmtTime(hud.timeLeft)}</p>
               </div>
-              <p className="font-display text-base tabular-nums text-fg sm:text-lg">{hud.destruction}%</p>
-              <p className="text-[10px] tracking-[0.16em] text-muted uppercase">{fmtTime(hud.timeLeft)}</p>
             </div>
           </div>
+          <ArmyBars atkName={battle.atkName} defName={battle.defName} army={hud.army} />
         </header>
 
         <div className="raid-canvas-wrap" ref={wrapRef}>
@@ -587,17 +643,25 @@ export function BattleScreen({
         ) : null}
 
         <div className="raid-dock">
-          {!watching && hud.phase === "deploy" ? (
+          {hud.phase === "deploy" ? (
             <div className="raid-orders raid-plan">
-              <p className="raid-orders-kicker">Orders before the charge</p>
+              <p className="raid-orders-kicker">{watching ? "How many hold each post" : "How many do each order"}</p>
               {orderKinds.map((kind) => (
                 <div key={kind} className="raid-plan-row">
-                  <p className="raid-plan-kind">{kindLabel(kind, battle.beastName)}</p>
-                  <OrderButtons
+                  <p className="raid-plan-kind">{kindLabel(kind, beastCaption)}</p>
+                  <OrderLots
                     kind={kind}
+                    side={watching ? "def" : "atk"}
                     current={hud.orders[kind]}
+                    lots={hud.lots[kind] ?? {}}
                     onPick={(id) => {
                       setRaidOrder(raidRef.current, kind, id);
+                      pickRaidKind(raidRef.current, kind);
+                      sfx("tick");
+                      bumpHud();
+                    }}
+                    onLot={(id, n) => {
+                      setOrderLot(raidRef.current, kind, id, n);
                       pickRaidKind(raidRef.current, kind);
                       sfx("tick");
                       bumpHud();
@@ -608,7 +672,7 @@ export function BattleScreen({
             </div>
           ) : !watching && hud.phase !== "over" && hud.selected && (KIND_ORDERS[hud.selected] ?? []).length > 0 ? (
             <div className="raid-orders">
-              <p className="raid-orders-kicker">{kindLabel(hud.selected, battle.beastName)} — order</p>
+              <p className="raid-orders-kicker">{kindLabel(hud.selected, beastCaption)} — order</p>
               <OrderButtons
                 kind={hud.selected}
                 current={hud.orders[hud.selected]}
@@ -620,7 +684,7 @@ export function BattleScreen({
               />
             </div>
           ) : null}
-          {!watching && hud.phase !== "over" ? (
+          {(!watching && hud.phase !== "over") || (watching && hud.phase === "deploy") ? (
             <div className="raid-tray">
               {kinds.map((kind) => {
                 const n = stockOf(raidRef.current, kind);
@@ -657,7 +721,7 @@ export function BattleScreen({
                       alt=""
                       className="raid-chip-art"
                     />
-                    <span className="raid-chip-name">{kindLabel(kind, battle.beastName)}</span>
+                    <span className="raid-chip-name">{kindLabel(kind, beastCaption)}</span>
                     <span className="tabular-nums text-muted">{n}</span>
                   </button>
                 );
@@ -680,7 +744,41 @@ export function BattleScreen({
             ) : (
               <>
                 {watching ? (
-                  <p className="flex-1 text-xs text-muted">Hold the walls. You do not place a host on defence.</p>
+                  hud.phase === "deploy" ? (
+                    <>
+                      <Button
+                        variant="secondary"
+                        className="flex-1"
+                        disabled={hud.stockLeft < 1}
+                        onClick={() => {
+                          autoDeployDef(raidRef.current);
+                          sfx("tick");
+                          bumpHud();
+                        }}
+                      >
+                        Place the rest
+                      </Button>
+                      <Button
+                        className="flex-1"
+                        onClick={() => {
+                          const raid = raidRef.current;
+                          if (beginAssault(raid)) {
+                            sfx("clash");
+                            bumpHud();
+                          }
+                        }}
+                      >
+                        The assault begins
+                      </Button>
+                      {allowAbort ? (
+                        <Button variant="ghost" onClick={() => onCancel(null)}>
+                          Leave the yard
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="flex-1 text-xs text-muted">Hold the walls. The keep must stand. Knights ride the first breach unless they hold the citadel.</p>
+                  )
                 ) : (
                   <>
                     {hud.phase === "deploy" ? (
@@ -857,6 +955,57 @@ function TallyTable({
   );
 }
 
+function ArmyBars({
+  atkName,
+  defName,
+  army,
+}: {
+  atkName: string;
+  defName: string;
+  army: RaidArmyHp;
+}) {
+  return (
+    <div className="raid-forces" aria-label="Army strength">
+      <ForceBar side="atk" name={atkName} cur={army.atk.cur} max={army.atk.max} />
+      <span className="raid-forces-vs">vs</span>
+      <ForceBar side="def" name={defName} cur={army.def.cur} max={army.def.max} />
+    </div>
+  );
+}
+
+function ForceBar({
+  side,
+  name,
+  cur,
+  max,
+}: {
+  side: "atk" | "def";
+  name: string;
+  cur: number;
+  max: number;
+}) {
+  const live = Math.max(0, Math.round(cur));
+  const cap = Math.max(0, Math.round(max));
+  const pct = cap > 0 ? Math.max(0, Math.min(100, (live / cap) * 100)) : 0;
+  const low = cap > 0 && live / cap <= 0.28;
+  return (
+    <div className={cn("raid-force", side === "def" && "is-def", low && "is-low")}>
+      <p className="raid-force-name">{name}</p>
+      <p className="raid-force-n tabular-nums">{live}</p>
+      <div
+        className="raid-force-track"
+        role="progressbar"
+        aria-label={`${name} ${live} of ${cap}`}
+        aria-valuemin={0}
+        aria-valuemax={cap}
+        aria-valuenow={live}
+      >
+        <div className="raid-force-fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function snapshot(raid: RaidState, cam: RaidCam) {
   return {
     phase: raid.phase,
@@ -869,11 +1018,13 @@ function snapshot(raid: RaidState, cam: RaidCam) {
     timeScale: raid.timeScale,
     tactic: raid.tactic ?? "any",
     orders: raid.orders ?? defaultOrders(),
+    lots: raid.orderLots ?? {},
     held: heldCount(raid),
     zoom: cam.zoom,
     placedAtk: raid.units.filter((u) => u.side === "atk" && u.hp > 0).length,
     stockLeft: raidKindsLeft(raid).length,
     status: raidBattleStatus(raid),
+    army: raidArmyHp(raid),
   };
 }
 

@@ -39,10 +39,10 @@ export const DEFENSE_LABEL: Record<DefenseKind, string> = {
 };
 
 export const DEFENSE_HINT: Record<DefenseKind, string> = {
-  walls: "Attackers must smash a gate or a breach to enter. Wood, then stone, then high, giant and colossal stone.",
+  walls: "Attackers must smash a closed gate or a breach to enter. Wood, then stone, then high, giant and colossal stone.",
   "outer-walls": "First ring. Slows the host before they reach the inner walls.",
   "keep-works": "Holds stores and the last garrison until the walls fall.",
-  towers: "Archers and scorpions stand on the towers. If a tower falls, its watch dies with it.",
+  towers: "Archers fill the gate-towers first, then the other towers. If a tower falls, its watch dies with it.",
   moats: "Slows attackers and cuts their range and blows. Single, then dual, then a third around the keep.",
   scorpion: "The only ground engine that wounds dragons. Range and count grow with each rank.",
 };

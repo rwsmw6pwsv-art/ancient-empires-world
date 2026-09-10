@@ -14,6 +14,7 @@ import {
   forceStrength,
   hostDefense,
   incomeFor,
+  isSeat,
   issueMarch,
   legalMarchTargets,
   ownedIds,
@@ -29,14 +30,20 @@ import {
   siegeTargetOf,
   fortOf,
   raiseWorks,
+  beastOfLand,
+  beastOfTerritory,
+  houseOfLand,
+  trainWarship,
+  warshipsCap,
 } from "./engine";
 import { openRaid, type RaidState } from "./raid";
 import type { AiAction, Difficulty, GameState, JobKind, PlayerId, TerritoryState } from "./types";
-import { UNIT_COST, BEAST_WAGE, FORT_CAP, isSiegeKind } from "./types";
+import { UNIT_COST, BEAST_WAGE, CAPITOL, FORT_CAP, WARSHIP_COST, isSiegeKind } from "./types";
 import { TERRITORY_BY_ID, continentTerritories, landNeighbors } from "./world";
 import { empireOf } from "./empires";
 import { beastOf } from "./landscape";
 import { DEFENSE_CAP, DEFENSE_KINDS, defenseRank, isDefenseKind } from "./defense";
+import { isWater } from "./waters";
 
 function owned(state: GameState, player: PlayerId): TerritoryState[] {
   return ownedIds(state, player).map((id) => state.territories[id]!);
@@ -187,27 +194,20 @@ function landWalk(state: GameState, t: TerritoryState, player: PlayerId): string
 }
 
 function rivalSize(state: GameState, owner: TerritoryState["owner"]): number {
-  if (owner === "barbarian") return 0;
+  if (owner === "barbarian" || owner === "open") return 0;
   return owned(state, owner).length;
 }
 
 function leadingRival(state: GameState, player: PlayerId): PlayerId | null {
-  let best: { id: PlayerId; continents: number; lands: number } | null = null;
+  let best: { id: PlayerId; capitals: number; lands: number } | null = null;
+  const seats = Object.values(CAPITOL);
   for (const p of state.players) {
     if (p.id === player || !p.alive) continue;
     const lands = owned(state, p.id).length;
     if (!lands) continue;
-    let continents = 0;
-    const share: Record<string, number> = {};
-    for (const t of owned(state, p.id)) {
-      const c = TERRITORY_BY_ID[t.id]!.continent;
-      share[c] = (share[c] ?? 0) + 1;
-    }
-    for (const c of Object.keys(share)) {
-      if (share[c] === continentTerritories(c).length) continents += 1;
-    }
-    if (!best || continents > best.continents || (continents === best.continents && lands > best.lands)) {
-      best = { id: p.id, continents, lands };
+    const capitals = seats.filter((id) => state.territories[id]?.owner === p.id).length;
+    if (!best || capitals > best.capitals || (capitals === best.capitals && lands > best.lands)) {
+      best = { id: p.id, capitals, lands };
     }
   }
   return best?.id ?? null;
@@ -225,11 +225,12 @@ function weakestPrey(state: GameState, player: PlayerId, capitol: string, spec: 
     for (const nid of legalMarchTargets(state, t.id)) {
       const dest = state.territories[nid]!;
       if (dest.owner === player) continue;
+      if (isWater(nid)) continue;
       const tribe = dest.owner === "barbarian";
       const tribeOnly = spec.tribeUntil > 0 && owned(state, player).length < spec.tribeUntil;
       if (tribeOnly && !tribe) continue;
       if (!spec.empires && !tribe) continue;
-      const atk = forceStrength(send, beastOf(state.players[player]!.empire).atk);
+      const atk = forceStrength(send, send.beasts > 0 ? beastOfTerritory(t).atk : 0);
       const def = hostDefense(state, dest);
       if (atk + spec.atkSlack < def) continue;
       let score = atk - def;
@@ -243,11 +244,11 @@ function weakestPrey(state: GameState, player: PlayerId, capitol: string, spec: 
       score += heldOn;
       const landsOn = continentTerritories(destCont).length;
       if (heldOn + 1 >= landsOn) score += 8;
+      if (Object.values(CAPITOL).includes(nid)) score += 10;
       if (!tribe && dest.owner !== "barbarian") {
         const size = rivalSize(state, dest.owner);
         if (size <= 2) score += 3;
         if (leader != null && dest.owner === leader) score += 4;
-        if (nid === empireOf(state.players[dest.owner]!.empire).capitol) score += 2;
       }
       if (score >= spec.marchMin && (!best || score > best.score)) best = { from: t.id, to: nid, score, send };
     }
@@ -274,6 +275,7 @@ function raidTarget(state: GameState, player: PlayerId): string | null {
     for (const id of legalMarchTargets(state, t.id)) {
       const dest = state.territories[id]!;
       if (dest.owner === player) continue;
+      if (isWater(id)) continue;
       const host = standing(dest);
       if (host < 1 || host > 8) continue;
       let score = 6 - host;
@@ -295,19 +297,20 @@ export function nextAiAction(state: GameState): AiAction {
   const capId = def.capitol;
   const cap = state.territories[capId];
   const holdCap = cap && cap.owner === player ? cap : null;
-  const beast = beastOf(p.empire);
   const realm = lands.length;
-  const nest = lands.find((t) => t.dragons < 1);
+  const nest = lands.find((t) => isSeat(t) && t.dragons < 1) ?? (holdCap && holdCap.dragons < 1 ? holdCap : undefined);
   const readyForDragon = Boolean(spec.dragons && nest && (realm >= 3 || ((nest?.knights ?? 0) >= 1 && standing(nest!) >= 4)));
   const nearDragon = Boolean(readyForDragon && p.gold >= spec.saveDragonFrom && p.gold < UNIT_COST.dragon.gold);
+  const beastSite = lands.find((t) => houseOfLand(t.id) === p.empire) ?? lands[0];
+  const huntBeast = beastSite ? beastOfLand(beastSite.id) : beastOf(p.empire);
   const canBeastNow =
-    Boolean(holdCap) &&
+    Boolean(beastSite) &&
     !nearDragon &&
-    p.gold >= beast.cost + spec.beastBank &&
-    standing(holdCap!) >= 2 &&
+    p.gold >= huntBeast.cost + spec.beastBank &&
+    standing(beastSite!) >= 2 &&
     realm >= (diff === "easy" ? 3 : 1);
   const canDragonNow = Boolean(spec.dragons && nest && p.gold >= UNIT_COST.dragon.gold);
-  const saving = savingFor(p.gold, beast.cost, spec, canBeastNow, canDragonNow) ?? (nearDragon ? "dragon" : null);
+  const saving = savingFor(p.gold, huntBeast.cost, spec, canBeastNow, canDragonNow) ?? (nearDragon ? "dragon" : null);
   const wagesOk = (extra = 0) => p.silver + incomeFor(state, player).silver >= upkeepFor(state, player).silver + extra;
   const hungry = incomeFor(state, player).food + p.food < foodNeed(state, player);
   const openLand = lands.some((t) => landWalk(state, t, player).length > 0);
@@ -390,6 +393,27 @@ export function nextAiAction(state: GameState): AiAction {
         return { type: "build", territoryId: t.id, kind: "ship" };
       }
     }
+    for (const t of lands) {
+      if (hasKindJob(state, t.id, "warship")) continue;
+      const want = diff === "hard" ? 2 : 1;
+      if (
+        t.port &&
+        (t.warships ?? 0) < want &&
+        (t.warships ?? 0) < warshipsCap(t) &&
+        p.gold >= WARSHIP_COST.gold &&
+        p.wood >= WARSHIP_COST.wood &&
+        p.metal >= WARSHIP_COST.metal
+      ) {
+        return { type: "build", territoryId: t.id, kind: "warship" };
+      }
+    }
+    for (const t of lands) {
+      if ((t.ships ?? 0) < 1) continue;
+      const open = legalMarchTargets(state, t.id).find((id) => isWater(id) && state.territories[id]?.owner === "open");
+      if (open) {
+        return { type: "march", from: t.id, to: open, levy: 0, bowmen: 0, knights: 0, dragons: 0, beasts: 0, ships: 1 };
+      }
+    }
   }
 
   if (hungry) {
@@ -402,8 +426,8 @@ export function nextAiAction(state: GameState): AiAction {
     }
   }
 
-  if (canBeastNow && holdCap && wagesOk(BEAST_WAGE) && !stoutBorder && !hasKindJob(state, holdCap.id, "beast")) {
-    return { type: "train", territoryId: holdCap.id, kind: "beast" };
+  if (canBeastNow && beastSite && wagesOk(BEAST_WAGE) && !stoutBorder && !hasKindJob(state, beastSite.id, "beast")) {
+    return { type: "train", territoryId: beastSite.id, kind: "beast" };
   }
 
   if (stoutBorder && spec.knights && p.gold >= UNIT_COST.knight.gold && p.metal >= UNIT_COST.knight.metal && wagesOk(1) && trainAt.levy >= 2 && !hasKindJob(state, trainAt.id, "knight")) {
@@ -469,6 +493,22 @@ export function nextAiAction(state: GameState): AiAction {
     }
   }
 
+  for (const t of lands) {
+    if ((t.ships ?? 0) < 1) continue;
+    const open = legalMarchTargets(state, t.id).find((id) => isWater(id) && state.territories[id]?.owner === "open");
+    if (open) {
+      return { type: "march", from: t.id, to: open, levy: 0, bowmen: 0, knights: 0, dragons: 0, beasts: 0, ships: 1 };
+    }
+  }
+
+  for (const t of lands) {
+    if (hasKindJob(state, t.id, "warship") || !t.port) continue;
+    if ((t.warships ?? 0) >= 1 || (t.warships ?? 0) >= warshipsCap(t)) continue;
+    if (p.gold >= WARSHIP_COST.gold && p.wood >= WARSHIP_COST.wood && p.metal >= WARSHIP_COST.metal) {
+      return { type: "build", territoryId: t.id, kind: "warship" };
+    }
+  }
+
   return { type: "end" };
 }
 
@@ -484,7 +524,9 @@ export function applyAiAction(state: GameState, action: AiAction): GameState {
     if (kind === "road") return buildRoad(state, action.territoryId);
     if (kind === "farm") return buildFarm(state, action.territoryId);
     if (isSiegeKind(kind)) return buildSiege(state, action.territoryId, kind);
-    return buildShip(state, action.territoryId);
+    if (kind === "warship") return trainWarship(state, action.territoryId);
+    if (kind === "ship") return buildShip(state, action.territoryId);
+    return raiseWorks(state, action.territoryId, kind);
   }
   if (action.type === "siege") return beginSiege(state, action.from, action.to);
   if (action.type === "march") {
@@ -494,6 +536,8 @@ export function applyAiAction(state: GameState, action: AiAction): GameState {
       knights: action.knights,
       dragons: action.dragons,
       beasts: action.beasts,
+      ships: action.ships,
+      warships: action.warships,
     });
   }
   if (action.type === "card") return playCard(state, action.card, action.territoryId);
@@ -534,6 +578,7 @@ export function playAiTurnsUntilBattle(
         { levy: incoming.levy, bowmen: incoming.bowmen, knights: incoming.knights, dragons: incoming.dragons, beasts: incoming.beasts },
         { rams: incoming.rams, catapults: incoming.catapults, ladders: incoming.ladders, towers: incoming.towers },
         "def",
+        incoming.beastHouse,
       );
       if (battle) return { state: next, battle };
     }
@@ -553,6 +598,7 @@ export function playAiTurnsUntilBattle(
       { levy: incoming.levy, bowmen: incoming.bowmen, knights: incoming.knights, dragons: incoming.dragons, beasts: incoming.beasts },
       { rams: incoming.rams, catapults: incoming.catapults, ladders: incoming.ladders, towers: incoming.towers },
       "def",
+      incoming.beastHouse,
     );
     if (battle) return { state: next, battle };
   }

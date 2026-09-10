@@ -3,6 +3,8 @@ import {
   BEAST_SRC,
   CAPITAL_SRC,
   CITY_ART_SRC,
+  DEFENSE_SRC,
+  KING_SRC,
   PROP_SRC,
   SCORPION_ART_SRC,
   SIEGE_SRC,
@@ -26,7 +28,7 @@ function uniq(list: (string | undefined | null)[]): string[] {
   return [...new Set(list.filter((u): u is string => Boolean(u)))];
 }
 
-export const TITLE_ASSETS = uniq(["/map/title-dragon.jpg", ...Object.values(BEAST_SRC)]);
+export const TITLE_ASSETS = uniq(["/map/title-dragon.jpg", ...Object.values(KING_SRC), ...Object.values(BEAST_SRC)]);
 
 export const PLAY_ASSETS = uniq([
   WORLD_SRC,
@@ -36,6 +38,8 @@ export const PLAY_ASSETS = uniq([
   ...Object.values(SIEGE_SRC),
   ...Object.values(CAPITAL_SRC),
   ...Object.values(PROP_SRC),
+  ...Object.values(CITY_ART_SRC),
+  ...Object.values(DEFENSE_SRC),
 ]);
 
 export const BATTLE_ASSETS = uniq([

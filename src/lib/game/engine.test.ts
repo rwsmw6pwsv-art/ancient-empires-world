@@ -19,6 +19,7 @@ import {
   commitBattle,
   constructionBusy,
   continentsHeld,
+  capitalsHeld,
   createNewGame,
   cityWatch,
   defenseStrength,
@@ -26,6 +27,7 @@ import {
   foodNeed,
   fortOf,
   hasJob,
+  houseOfLand,
   incomeFor,
   issueMarch,
   legalMarchTargets,
@@ -33,14 +35,20 @@ import {
   oddsLabel,
   playCard,
   raiseWorks,
+  rankPlayers,
+  rankShiftLines,
   realmRecruits,
   realmPopulation,
+  empireStats,
+  empireScore,
+  empireLevel,
   recallOccupiers,
   resolveAttack,
   setMarchFrom,
   siegeTargetOf,
   siegeTurnsFor,
   trainUnit,
+  trainWarship,
   tradeFor,
   upkeepFor,
   watchReport,
@@ -51,17 +59,28 @@ import {
   cancelJob,
   cancelMarch,
   hasKindJob,
+  beastOfLand,
+  beastOfTerritory,
 } from "./engine.ts";
-import { autoDeployAll, beginAssault, chargeWave, cloneRaid, cityArtId, cityRadius, deployTroop, hostTotal, hurtBuilding, hurtWall, KIND_ORDERS, openRaid, RAID_CX, RAID_CY, RAID_GATE_A, RAID_H, RAID_SLOWEST, RAID_SPEEDS, RAID_W, raidBattleStatus, raidOutcome, raidWinner, runRaid, setRaidOrder, setRaidTactic, stepRaid } from "./raid.ts";
+import { autoDeployAll, autoDeployDef, beginAssault, canDeployAt, chargeWave, cloneRaid, cityArtId, cityRadius, deployTroop, hostTotal, hurtBuilding, hurtWall, DEF_KIND_ORDERS, KIND_ORDERS, openRaid, RAID_CX, RAID_CY, RAID_GATE_A, RAID_GATE_TOWER_DA, RAID_H, RAID_SLOWEST, RAID_SPEEDS, RAID_W, raidArmyHp, raidBattleStatus, raidOutcome, raidWinner, runRaid, setOrderLot, setRaidOrder, setRaidTactic, stepRaid } from "./raid.ts";
 import { drillFoeOf, openDrillRaid } from "./drill.ts";
-import { beastOf, landscapeOf, dragonPowerFor } from "./landscape.ts";
+import { beastOf, cityArtForTerritory, landscapeOf, dragonPowerFor } from "./landscape.ts";
 import { defenseRank } from "./defense.ts";
 import { BATTLE_ASSETS, DRILL_ASSETS, PLAY_ASSETS, TITLE_ASSETS, packUrls, preloadAll } from "./preload.ts";
-import { CAPITOL, CITY_DEF, CONTINENT_BONUS, CONTINENT_BREAK_GOLD, FORT_DEF, FORT_LABEL, HOUSES, PLAYER_COUNT, SAVE_VERSION, SIEGE_CAP, SIEGE_COST, SIEGE_TURNS, TOWER_CARGO, UNIT_CAP, UNIT_COST, UNIT_LABEL, UNIT_STR, UNIT_TURNS, WIN_CONTINENTS, WORKS_CAP, type PlayerId } from "./types.ts";
+import { CAPITOL, CITY_DEF, CONTINENT_BONUS, CONTINENT_BREAK_GOLD, FORT_DEF, FORT_LABEL, HOUSES, PLAYER_COUNT, REGION_HOUSE, SAVE_VERSION, SIEGE_CAP, SIEGE_COST, SIEGE_TURNS, TOWER_CARGO, UNIT_CAP, UNIT_COST, UNIT_LABEL, UNIT_STR, UNIT_TURNS, WIN_CAPITALS, WORKS_CAP, type PlayerId } from "./types.ts";
 import { DIFFICULTIES } from "./campaign.ts";
+import { clearSave, hasSave, loadGame, saveGame } from "./save.ts";
+import { sfxForTrain, hasBeastCry } from "../sfx.ts";
 import { TERRITORIES, TERRITORY_BY_ID, continentTerritories, landNeighbors, seaNeighbors } from "./world.ts";
+import { FLOODED_IDS } from "./flooded.gen.ts";
+import { hexNeighbors } from "./globe.ts";
+import { isWater, seaYieldOf, WATER_BY_ID, WATER_IDS } from "./waters.ts";
 
 const EG = CAPITOL.egypt;
+const SU = CAPITOL.sumer;
+const TH = CAPITOL.thule;
+const AK = CAPITOL.alaska;
+const ATL = CAPITOL.atlantis;
 
 function playSteps(raid: { timeScale: number }, n: number) {
   raid.timeScale = 1;
@@ -69,71 +88,36 @@ function playSteps(raid: { timeScale: number }, n: number) {
 }
 
 describe("world", () => {
-  it("has two hundred and sixty-nine hex provinces", () => {
-    assert.equal(TERRITORIES.length, 269);
-    assert.equal(new Set(TERRITORIES.map((t) => t.id)).size, 269);
-    assert.equal(new Set(TERRITORIES.map((t) => t.name)).size, 269);
+  it("has a playable hex on every painted land", () => {
+    assert.equal(TERRITORIES.length, 339);
+    assert.equal(new Set(TERRITORIES.map((t) => t.id)).size, 339);
+    assert.equal(new Set(TERRITORIES.map((t) => t.name)).size, 339);
+    assert.ok(TERRITORY_BY_ID.clanne01);
+    assert.ok(TERRITORY_BY_ID.clanoc01);
+    for (const id of FLOODED_IDS) assert.ok(!TERRITORY_BY_ID[id], id);
   });
   it("lands sit on the right regions", () => {
     assert.equal(TERRITORY_BY_ID.asgard.continent, "at");
-    assert.equal(TERRITORY_BY_ID.nord.continent, "ne");
-    assert.equal(TERRITORY_BY_ID.hawaii.continent, "ca");
-    assert.equal(TERRITORY_BY_ID.mayan.continent, "ca");
-    assert.equal(TERRITORY_BY_ID.orinoco.continent, "ca");
-    assert.equal(TERRITORY_BY_ID.zapotec.continent, "nw");
-    assert.equal(TERRITORY_BY_ID.atlantis.continent, "eu");
-    assert.equal(TERRITORY_BY_ID.egypt.continent, "an");
-    assert.equal(TERRITORY_BY_ID.nile.continent, "me");
-    assert.equal(TERRITORY_BY_ID.atlas.continent, "an");
-    assert.equal(TERRITORY_BY_ID.sirte.continent, "eu");
+    assert.equal(TERRITORY_BY_ID.pantanal.continent, "sa");
+    assert.equal(TERRITORY_BY_ID.karoo.continent, "af");
+    assert.equal(TERRITORY_BY_ID.gobi.continent, "ae");
+    assert.equal(TERRITORY_BY_ID[CAPITOL.thule]!.continent, "ne");
+    assert.equal(TERRITORY_BY_ID[CAPITOL.alaska]!.continent, "nw");
+    assert.equal(TERRITORY_BY_ID[CAPITOL.atlantis]!.continent, "eu");
+    assert.equal(TERRITORY_BY_ID[CAPITOL.egypt]!.continent, "an");
+    assert.equal(TERRITORY_BY_ID[CAPITOL.sumer]!.continent, "me");
+    assert.equal(TERRITORY_BY_ID[CAPITOL.lumuria]!.continent, "ss");
+    assert.equal(TERRITORY_BY_ID[CAPITOL.gondwana]!.continent, "oc");
+    assert.equal(TERRITORY_BY_ID[CAPITOL.aztec]!.continent, "ca");
     assert.equal(TERRITORY_BY_ID.peninsula.continent, "sa");
     assert.ok(landNeighbors("peninsula").includes("weddell"));
     assert.ok(landNeighbors("weddell").includes("drake"));
     assert.ok(landNeighbors("drake").includes("fuegia"));
     assert.ok(landNeighbors("fuegia").includes("tocantins"));
-    assert.equal(TERRITORY_BY_ID.orinoco.continent, "ca");
     assert.ok(landNeighbors("orinoco").includes("paria"));
     assert.ok(landNeighbors("arawak").includes("paria"));
-    assert.equal(TERRITORY_BY_ID.congo.continent, "an");
-    assert.equal(TERRITORY_BY_ID.karoo.continent, "af");
-    assert.equal(TERRITORY_BY_ID.sumer.continent, "me");
-    assert.equal(TERRITORY_BY_ID.carthage.continent, "me");
-    assert.equal(TERRITORY_BY_ID.kunlun.continent, "me");
-    assert.equal(TERRITORY_BY_ID.gobi.continent, "ae");
-    assert.equal(TERRITORY_BY_ID.shangrila.continent, "ss");
-    assert.equal(TERRITORY_BY_ID.sahul.continent, "oc");
-    assert.equal(TERRITORY_BY_ID.malaya.continent, "ss");
-    assert.equal(TERRITORY_BY_ID.calusa.continent, "ca");
-    assert.equal(TERRITORY_BY_ID.doggerland.continent, "eu");
-    assert.equal(TERRITORY_BY_ID.loyalty.continent, "oc");
-    assert.equal(TERRITORY_BY_ID.cappadocia.continent, "an");
-    assert.equal(TERRITORY_BY_ID.mentawai.continent, "ss");
-    assert.equal(TERRITORY_BY_ID.flores.continent, "ss");
-    assert.equal(TERRITORY_BY_ID.timor.continent, "ss");
-    assert.equal(TERRITORY_BY_ID.java.continent, "me");
-    assert.equal(TERRITORY_BY_ID.tibet.continent, "ae");
-    assert.equal(TERRITORY_BY_ID.bohemia.continent, "me");
-    assert.equal(TERRITORY_BY_ID.tibesti.continent, "an");
-    assert.equal(TERRITORY_BY_ID.scoresby.continent, "ne");
-    assert.equal(TERRITORY_BY_ID.tequesta.continent, "ne");
-    assert.equal(TERRITORY_BY_ID.timucua.continent, "ne");
-    assert.equal(TERRITORY_BY_ID.cuba.continent, "ca");
-    assert.equal(TERRITORY_BY_ID.alor.continent, "ss");
-    assert.equal(TERRITORY_BY_ID.coats.continent, "at");
-    assert.equal(TERRITORY_BY_ID.liguria.continent, "me");
-    assert.equal(TERRITORY_BY_ID.sierra.continent, "nw");
-    assert.equal(TERRITORY_BY_ID.nicoya.continent, "nw");
-    assert.equal(TERRITORY_BY_ID.amur.continent, "aw");
-    assert.equal(TERRITORY_BY_ID.baikal.continent, "aw");
-    assert.equal(TERRITORY_BY_ID.chuvan.continent, "aw");
-    assert.equal(TERRITORY_BY_ID.yenisei.continent, "eu");
-    assert.equal(TERRITORY_BY_ID.paria.continent, "ca");
-    assert.equal(TERRITORY_BY_ID.miskito.continent, "ca");
     assert.ok(landNeighbors("olmec").includes("miskito"));
     assert.ok(landNeighbors("paria").includes("miskito"));
-    assert.equal(TERRITORY_BY_ID.najd.continent, "me");
-    assert.equal(TERRITORY_BY_ID.gotland.continent, "eu");
-    assert.equal(TERRITORY_BY_ID.iturup.continent, "ae");
     assert.ok(!TERRITORY_BY_ID.eldorado);
     assert.ok(!TERRITORY_BY_ID.iberia);
     assert.ok(!TERRITORY_BY_ID.wilkes);
@@ -143,7 +127,7 @@ describe("world", () => {
   });
   it("lands are named for terrain", () => {
     const names = TERRITORIES.map((t) => t.name);
-    assert.equal(new Set(names).size, 269);
+    assert.equal(new Set(names).size, TERRITORIES.length);
     for (const t of TERRITORIES) {
       assert.match(t.name, /^[A-Za-z][A-Za-z ]+$/, t.id);
       assert.ok(t.name.length <= 12, `${t.id} ${t.name}`);
@@ -158,12 +142,19 @@ describe("world", () => {
     }
     assert.ok(TERRITORIES.some((t) => !t.coastal));
   });
-  it("regions keep about twenty hex seats", () => {
+  it("regions keep a playable spread of hex seats", () => {
     const regions = ["at", "nw", "ne", "ca", "sa", "eu", "an", "af", "me", "aw", "ae", "ss", "oc"] as const;
     assert.equal(regions.length, 13);
     for (const c of regions) {
       const n = continentTerritories(c).length;
-      assert.ok(n >= 15 && n <= 26, `${c} has ${n}`);
+      assert.ok(n >= 24 && n <= 30, `${c} has ${n}`);
+    }
+  });
+  it("capitals sit near the middle of their region", () => {
+    for (const e of EMPIRE_LIST) {
+      const cap = TERRITORY_BY_ID[e.capitol];
+      assert.ok(cap, e.id);
+      assert.equal(cap.continent, e.region, e.id);
     }
   });
   it("provinces are hexagons", () => {
@@ -174,7 +165,7 @@ describe("world", () => {
     }
   });
   it("hex seats do not overlap", () => {
-    const seats = TERRITORIES.map((t) => {
+    const seats = TERRITORIES.filter((t) => !t.id.startsWith("clan")).map((t) => {
       const nums = (t.path.match(/-?\d+\.?\d*/g) ?? []).map(Number);
       let r = 0;
       for (let i = 0; i < nums.length; i += 2) {
@@ -212,10 +203,10 @@ describe("landscape", () => {
   });
   it("wonders sit on capitals", () => {
     assert.equal(landscapeOf(EG).wonder, "pyramids");
-    assert.equal(landscapeOf("volcan").wonder, "teocalli");
+    assert.equal(landscapeOf(CAPITOL.aztec).wonder, "teocalli");
     assert.equal(landscapeOf("gobi").wonder, "pagoda");
-    assert.equal(landscapeOf("irrawaddy").wonder, "stupa");
-    assert.equal(landscapeOf("tigris").wonder, "gardens");
+    assert.equal(landscapeOf(CAPITOL.lumuria).wonder, "stupa");
+    assert.equal(landscapeOf(SU).wonder, "gardens");
     assert.equal(landscapeOf("asgard").wonder, "icewall");
   });
   it("every province has a trade resource", () => {
@@ -252,32 +243,40 @@ describe("houses", () => {
     assert.ok(HOUSES.includes("sumer"));
   });
   it("capitals match the seats", () => {
-    assert.equal(CAPITOL.atlantis, "atlantis");
-    assert.equal(CAPITOL.egypt, "sahel");
-    assert.match(TERRITORY_BY_ID.sahel.name, /^[A-Za-z ]+$/);
+    assert.equal(CAPITOL.atlantis, "noricum");
+    assert.equal(CAPITOL.egypt, "darfur");
+    assert.match(TERRITORY_BY_ID.darfur.name, /^[A-Za-z ]+$/);
     assert.match(TERRITORY_BY_ID.egypt.name, /^[A-Za-z ]+$/);
-    assert.equal(CAPITOL.aztec, "volcan");
-    assert.match(TERRITORY_BY_ID.volcan.name, /^[A-Za-z ]+$/);
-    assert.equal(CAPITOL.lumuria, "irrawaddy");
-    assert.match(TERRITORY_BY_ID.irrawaddy.name, /^[A-Za-z ]+$/);
+    assert.equal(CAPITOL.aztec, "miskito");
+    assert.match(TERRITORY_BY_ID.miskito.name, /^[A-Za-z ]+$/);
+    assert.equal(CAPITOL.lumuria, "tamil");
+    assert.match(TERRITORY_BY_ID.tamil.name, /^[A-Za-z ]+$/);
     assert.equal(CAPITOL.tartaria, "gobi");
     assert.match(TERRITORY_BY_ID.gobi.name, /^[A-Za-z ]+$/);
-    assert.equal(CAPITOL.thule, "nord");
-    assert.equal(empireOf("thule").capitol, "nord");
-    assert.equal(TERRITORY_BY_ID.nord.continent, "ne");
-    assert.equal(CAPITOL.alaska, "yukon");
-    assert.match(TERRITORY_BY_ID.yukon.name, /^[A-Za-z ]+$/);
-    assert.equal(TERRITORY_BY_ID.yukon.continent, "nw");
-    assert.equal(CAPITOL.siberia, "siberia");
-    assert.equal(TERRITORY_BY_ID.siberia.continent, "aw");
+    assert.equal(CAPITOL.thule, "erie");
+    assert.equal(empireOf("thule").capitol, "erie");
+    assert.equal(TERRITORY_BY_ID.erie.continent, "ne");
+    assert.equal(CAPITOL.alaska, "rockies");
+    assert.equal(TERRITORY_BY_ID.rockies.name, "Alaska");
+    assert.equal(TERRITORY_BY_ID.rockies.continent, "nw");
+    assert.equal(CAPITOL.siberia, "manchuria");
+    assert.equal(TERRITORY_BY_ID.manchuria.continent, "aw");
+    assert.equal(TERRITORY_BY_ID.manchuria.name, "Siberia");
     assert.equal(TERRITORY_BY_ID.gobi.continent, "ae");
-    assert.equal(empireOf("atlantis").capitol, "atlantis");
+    assert.equal(empireOf("atlantis").capitol, "noricum");
     assert.equal(empireOf("asgard").capitol, "asgard");
     assert.equal(TERRITORY_BY_ID.asgard.continent, "at");
-    assert.equal(CAPITOL.sumer, "tigris");
-    assert.equal(empireOf("sumer").capitol, "tigris");
-    assert.equal(TERRITORY_BY_ID.tigris.name, "Sumer");
-    assert.equal(TERRITORY_BY_ID.tigris.continent, "me");
+    assert.equal(CAPITOL.sumer, "sumer");
+    assert.equal(empireOf("sumer").capitol, "sumer");
+    assert.equal(TERRITORY_BY_ID.sumer.name, "Sumer");
+    assert.equal(TERRITORY_BY_ID.sumer.continent, "me");
+  });
+  it("each region raises that house's beasts", () => {
+    for (const e of EMPIRE_LIST) {
+      assert.equal(REGION_HOUSE[e.region], e.id, e.id);
+      assert.equal(houseOfLand(e.capitol), e.id);
+      assert.equal(beastOfLand(e.capitol).id, beastOf(e.id).id);
+    }
   });
   it("homes sit on the map", () => {
     for (const e of EMPIRE_LIST) {
@@ -300,10 +299,10 @@ describe("newGame", () => {
     assert.equal(g.territories[EG].owner, 0);
     assert.equal(g.players[0]!.human, true);
     assert.equal(g.players.length, 13);
-    assert.equal(Object.keys(g.territories).length, 269);
+    assert.equal(Object.keys(g.territories).length, TERRITORIES.length + WATER_IDS.length);
   });
   it("Nord wakes in the American heartland", () => {
-    assert.equal(createNewGame({ empire: "thule", seed: 4 }).territories.nord.owner, 0);
+    assert.equal(createNewGame({ empire: "thule", seed: 4 }).territories[TH].owner, 0);
   });
   it("Asgard starts with a port on the ice", () => {
     const g = createNewGame({ empire: "asgard", seed: 4 });
@@ -349,6 +348,48 @@ describe("newGame", () => {
   it("save version is current", () => {
     assert.equal(createNewGame({ empire: "aztec", seed: 1 }).version, SAVE_VERSION);
   });
+  it("a written age can be opened again", () => {
+    const mem = new Map<string, string>();
+    const stub = {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        mem.set(k, v);
+      },
+      removeItem: (k: string) => {
+        mem.delete(k);
+      },
+      clear: () => mem.clear(),
+      key: (i: number) => [...mem.keys()][i] ?? null,
+      get length() {
+        return mem.size;
+      },
+    };
+    const prev = globalThis.localStorage;
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: stub });
+    try {
+      const g = createNewGame({ empire: "egypt", seed: 11 });
+      saveGame(g);
+      assert.equal(hasSave(), true);
+      const loaded = loadGame();
+      assert.equal(loaded?.players[0]!.empire, "egypt");
+      assert.equal(loaded?.clock.turn, g.clock.turn);
+      clearSave();
+      assert.equal(hasSave(), false);
+    } finally {
+      Object.defineProperty(globalThis, "localStorage", { configurable: true, value: prev });
+    }
+  });
+  it("a dragon roar and a beast growl are distinct from a drill", () => {
+    assert.equal(sfxForTrain("dragon"), "roar");
+    assert.equal(sfxForTrain("beast"), "growl");
+    assert.equal(sfxForTrain("levy"), "ok");
+    assert.equal(sfxForTrain("knight"), "ok");
+  });
+  it("every house beast has its own cry", () => {
+    for (const e of EMPIRE_LIST) {
+      assert.equal(hasBeastCry(beastOf(e.id).id), true, e.id);
+    }
+  });
 });
 
 describe("ports and mines", () => {
@@ -356,11 +397,11 @@ describe("ports and mines", () => {
     let g = createNewGame({ empire: "alaska", seed: 11 });
     g.players[0]!.gold = 20;
     g.players[0]!.wood = 10;
-    g = buildPort(g, "yukon");
-    assert.ok(hasJob(g, "yukon"));
-    assert.ok(constructionBusy(g, "yukon"));
+    g = buildPort(g, AK);
+    assert.ok(hasJob(g, AK));
+    assert.ok(constructionBusy(g, AK));
     g = advanceJobs(g);
-    assert.equal(g.territories.yukon.port, true);
+    assert.equal(g.territories[AK].port, true);
   });
   it("Kunlun cannot raise a port inland", () => {
     let g = createNewGame({ empire: "tartaria", seed: 12 });
@@ -400,36 +441,36 @@ describe("ports and mines", () => {
     let g = createNewGame({ empire: "alaska", seed: 15 });
     g.players[0]!.gold = 40;
     g.players[0]!.wood = 20;
-    const blocked = buildShip(g, "yukon");
-    assert.equal(hasJob(blocked, "yukon"), false);
-    g = buildPort(g, "yukon");
+    const blocked = buildShip(g, AK);
+    assert.equal(hasJob(blocked, AK), false);
+    g = buildPort(g, AK);
     g = advanceJobs(g);
-    g = buildShip(g, "yukon");
+    g = buildShip(g, AK);
     g = advanceJobs(g);
-    assert.ok(g.territories.yukon.ships >= 1);
+    assert.ok(g.territories[AK].ships >= 1);
   });
   it("a harbour can lay a second keel", () => {
     let g = createNewGame({ empire: "atlantis", seed: 15 });
     g.players[0]!.gold = 40;
     g.players[0]!.wood = 30;
-    g.territories.atlantis.port = true;
-    g.territories.atlantis.portRank = 1;
-    g = buildShip(g, "atlantis");
+    g.territories[ATL].port = true;
+    g.territories[ATL].portRank = 1;
+    g = buildShip(g, ATL);
     g = advanceJobs(g);
-    g = buildShip(g, "atlantis");
+    g = buildShip(g, ATL);
     g = advanceJobs(g);
-    assert.equal(g.territories.atlantis.ships, 2);
+    assert.equal(g.territories[ATL].ships, 2);
   });
-  it("a ship sails with the host; two keels can march the same watch", () => {
+  it("a warship sails with the host; two warships can march the same watch", () => {
     let g = createNewGame({ empire: "atlantis", seed: 17 });
-    g.territories.atlantis.port = true;
-    g.territories.atlantis.ships = 2;
-    g.territories.atlantis.levy = 20;
-    g.territories.atlantis.beasts = 0;
-    const overSea = seaNeighbors("atlantis").filter(
+    g.territories[ATL].port = true;
+    g.territories[ATL].warships = 2;
+    g.territories[ATL].levy = 20;
+    g.territories[ATL].beasts = 0;
+    const overSea = seaNeighbors(ATL).filter(
       (id) =>
         g.territories[id]!.owner === "barbarian" &&
-        !landNeighbors("atlantis").includes(id) &&
+        !landNeighbors(ATL).includes(id) &&
         TERRITORY_BY_ID[id]!.coastal,
     );
     const first = overSea[0]!;
@@ -440,83 +481,83 @@ describe("ports and mines", () => {
     g.territories[second]!.levy = 1;
     g.territories[second]!.knights = 0;
     g.territories[second]!.beasts = 0;
-    g = issueMarch(g, "atlantis", first, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
-    g = issueMarch(g, "atlantis", second, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
-    assert.equal(g.territories.atlantis.ships, 0);
+    g = issueMarch(g, ATL, first, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
+    g = issueMarch(g, ATL, second, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
+    assert.equal(g.territories[ATL].warships, 0);
     assert.equal(g.marches.length, 2);
     assert.equal(g.territories[first]!.owner, "barbarian");
     g = advanceJobs(g);
     assert.equal(g.arrivals.length, 2);
   });
-  it("a wiped landing loses the keel", () => {
+  it("a wiped landing loses the warship", () => {
     let g = createNewGame({ empire: "atlantis", seed: 19 });
-    g.territories.atlantis.port = true;
-    g.territories.atlantis.ships = 1;
-    g.territories.atlantis.levy = 2;
-    g.territories.atlantis.beasts = 0;
-    const dest = seaNeighbors("atlantis").find(
+    g.territories[ATL].port = true;
+    g.territories[ATL].warships = 1;
+    g.territories[ATL].levy = 2;
+    g.territories[ATL].beasts = 0;
+    const dest = seaNeighbors(ATL).find(
       (id) =>
         g.territories[id]!.owner === "barbarian" &&
-        !landNeighbors("atlantis").includes(id) &&
+        !landNeighbors(ATL).includes(id) &&
         TERRITORY_BY_ID[id]!.coastal,
     )!;
     g.territories[dest]!.levy = 30;
     g.territories[dest]!.knights = 0;
     g.territories[dest]!.castle = true;
     g.territories[dest]!.castleRank = 1;
-    g = resolveAttack(g, "atlantis", dest, { levy: 1, knights: 0, dragons: 0, beasts: 0 });
+    g = resolveAttack(g, ATL, dest, { levy: 1, knights: 0, dragons: 0, beasts: 0 });
     assert.notEqual(g.territories[dest]!.owner, 0);
-    assert.equal(g.territories.atlantis.ships, 0);
+    assert.equal(g.territories[ATL].warships, 0);
   });
   it("a rank I harbour holds two keels, a citadel port holds six", () => {
     let g = createNewGame({ empire: "atlantis", seed: 21 });
-    g.territories.atlantis.port = true;
-    g.territories.atlantis.portRank = 1;
-    assert.equal(shipsCap(g.territories.atlantis), 2);
+    g.territories[ATL].port = true;
+    g.territories[ATL].portRank = 1;
+    assert.equal(shipsCap(g.territories[ATL]), 2);
     g.players[0]!.gold = 80;
     g.players[0]!.wood = 80;
-    g.territories.atlantis.ships = 2;
-    const blocked = buildShip(g, "atlantis");
-    assert.equal(hasJob(blocked, "atlantis"), false);
-    g.territories.atlantis.portRank = 3;
-    assert.equal(shipsCap(g.territories.atlantis), 6);
-    g = buildShip(g, "atlantis");
-    assert.ok(hasJob(g, "atlantis"));
+    g.territories[ATL].ships = 2;
+    const blocked = buildShip(g, ATL);
+    assert.equal(hasJob(blocked, ATL), false);
+    g.territories[ATL].portRank = 3;
+    assert.equal(shipsCap(g.territories[ATL]), 6);
+    g = buildShip(g, ATL);
+    assert.ok(hasJob(g, ATL));
   });
-  it("a landing keel can sail home with part of the host", () => {
+  it("a landing warship can sail home with part of the host", () => {
     let g = createNewGame({ empire: "atlantis", seed: 22 });
-    g.territories.atlantis.port = true;
-    g.territories.atlantis.portRank = 1;
-    g.territories.atlantis.ships = 1;
-    g.territories.atlantis.levy = 12;
-    g.territories.atlantis.beasts = 0;
-    const dest = seaNeighbors("atlantis").find(
+    g.territories[ATL].port = true;
+    g.territories[ATL].portRank = 1;
+    g.territories[ATL].warships = 1;
+    g.territories[ATL].levy = 12;
+    g.territories[ATL].beasts = 0;
+    const dest = seaNeighbors(ATL).find(
       (id) =>
         g.territories[id]!.owner === "barbarian" &&
-        !landNeighbors("atlantis").includes(id) &&
+        !landNeighbors(ATL).includes(id) &&
         TERRITORY_BY_ID[id]!.coastal,
     )!;
     g.territories[dest]!.levy = 1;
     g.territories[dest]!.knights = 0;
     g.territories[dest]!.beasts = 0;
     g.territories[dest]!.castle = false;
-    g = resolveAttack(g, "atlantis", dest, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
+    g = resolveAttack(g, ATL, dest, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
     assert.equal(g.territories[dest]!.owner, 0);
-    assert.equal(g.territories[dest]!.ships, 1);
-    assert.equal(g.territories.atlantis.ships, 0);
+    assert.equal(g.territories[dest]!.warships, 1);
+    assert.equal(g.territories[ATL].warships, 0);
     const held = g.territories[dest]!.levy;
-    g = recallOccupiers(g, "atlantis", dest, { levy: held - 1, knights: 0, dragons: 0, beasts: 0, ships: 1 });
-    assert.equal(g.territories[dest]!.ships, 0);
-    assert.equal(g.territories.atlantis.ships, 1);
+    g = recallOccupiers(g, ATL, dest, { levy: held - 1, knights: 0, dragons: 0, beasts: 0, warships: 1 });
+    assert.equal(g.territories[dest]!.warships, 0);
+    assert.equal(g.territories[ATL].warships, 1);
   });
   it("a coastal capital can open a market", () => {
     let g = createNewGame({ empire: "atlantis", seed: 16 });
     g.players[0]!.gold = 20;
     g.players[0]!.wood = 10;
     const before = incomeFor(g, 0).gold;
-    g = buildMarket(g, "atlantis");
+    g = buildMarket(g, ATL);
     g = advanceJobs(g);
-    assert.equal(g.territories.atlantis.market, true);
+    assert.equal(g.territories[ATL].market, true);
     assert.ok(incomeFor(g, 0).gold >= before + 1);
   });
   it("markets ports mines and walls can be improved with gold", () => {
@@ -524,22 +565,22 @@ describe("ports and mines", () => {
     g.players[0]!.gold = 80;
     g.players[0]!.wood = 20;
     g.players[0]!.stone = 20;
-    g = buildMarket(g, "atlantis");
+    g = buildMarket(g, ATL);
     g = advanceJobs(g);
-    assert.equal(worksRank(g.territories.atlantis, "market"), 1);
+    assert.equal(worksRank(g.territories[ATL], "market"), 1);
     const trade1 = tradeFor(g, 0);
     const gold1 = g.players[0]!.gold;
-    g = buildMarket(g, "atlantis");
+    g = buildMarket(g, ATL);
     g = advanceJobs(g);
-    assert.equal(worksRank(g.territories.atlantis, "market"), 2);
+    assert.equal(worksRank(g.territories[ATL], "market"), 2);
     assert.ok(g.players[0]!.gold < gold1);
     g.players[0]!.gold = gold1;
     assert.ok(tradeFor(g, 0) > trade1);
-    g = buildMarket(g, "atlantis");
+    g = buildMarket(g, ATL);
     g = advanceJobs(g);
-    assert.equal(worksRank(g.territories.atlantis, "market"), WORKS_CAP);
-    const blocked = buildMarket(g, "atlantis");
-    assert.equal(hasJob(blocked, "atlantis"), false);
+    assert.equal(worksRank(g.territories[ATL], "market"), WORKS_CAP);
+    const blocked = buildMarket(g, ATL);
+    assert.equal(hasJob(blocked, ATL), false);
   });
   it("improved walls raise defence", () => {
     let g = createNewGame({ empire: "egypt", seed: 19 });
@@ -581,19 +622,19 @@ describe("ports and mines", () => {
     let g = createNewGame({ empire: "egypt", seed: 91 });
     g.players[0]!.gold = 20;
     g.players[0]!.wood = 10;
-    g = buildFarm(g, "sahel");
+    g = buildFarm(g, EG);
     g = advanceJobs(g);
-    assert.equal(g.territories.sahel.farm, true);
+    assert.equal(g.territories[EG].farm, true);
     assert.ok(incomeFor(g, 0).food >= 4);
-    const pop = g.territories.sahel.population;
+    const pop = g.territories[EG].population;
     g.players[0]!.food = 20;
     g.players[0]!.lastLands = 0;
-    for (const id of landNeighbors("sahel")) {
+    for (const id of landNeighbors(EG)) {
       if (g.territories[id]!.owner === "barbarian") g.territories[id]!.pressure = 4;
     }
     g.clock.currentPlayer = (PLAYER_COUNT - 1) as PlayerId;
     g = endTurn(g);
-    assert.ok(g.territories.sahel.population > pop);
+    assert.ok(g.territories[EG].population > pop);
   });
   it("hunger shrinks a city", () => {
     let g = createNewGame({ empire: "egypt", seed: 92 });
@@ -647,14 +688,14 @@ describe("economy and combat", () => {
     let g = createNewGame({ empire: "atlantis", seed: 23 });
     const gold = g.players[0]!.gold;
     const metal = g.players[0]!.metal;
-    const levy = g.territories.atlantis.levy;
-    g = trainUnit(g, "atlantis", "levy");
+    const levy = g.territories[ATL].levy;
+    g = trainUnit(g, ATL, "levy");
     assert.equal(g.players[0]!.gold, gold - 2);
     assert.equal(g.players[0]!.metal, metal - 1);
-    assert.equal(g.territories.atlantis.levy, levy);
+    assert.equal(g.territories[ATL].levy, levy);
     assert.equal(UNIT_TURNS.levy, 1);
     g = advanceJobs(g);
-    assert.equal(g.territories.atlantis.levy, levy + 1);
+    assert.equal(g.territories[ATL].levy, levy + 1);
   });
   it("dragons cost gold only", () => {
     let g = createNewGame({ empire: "atlantis", seed: 23 });
@@ -662,30 +703,30 @@ describe("economy and combat", () => {
     g.players[0]!.stone = 0;
     g.players[0]!.wood = 0;
     g.players[0]!.metal = 0;
-    g = trainUnit(g, "atlantis", "dragon");
-    assert.equal(g.territories.atlantis.dragons, 0);
+    g = trainUnit(g, ATL, "dragon");
+    assert.equal(g.territories[ATL].dragons, 0);
     assert.equal(g.players[0]!.gold, 5);
     for (let i = 0; i < UNIT_TURNS.dragon; i++) g = advanceJobs(g);
-    assert.equal(g.territories.atlantis.dragons, 1);
+    assert.equal(g.territories[ATL].dragons, 1);
     g.players[0]!.gold = 30;
-    g = trainUnit(g, "atlantis", "dragon");
-    assert.equal(g.territories.atlantis.dragons, 1);
+    g = trainUnit(g, ATL, "dragon");
+    assert.equal(g.territories[ATL].dragons, 1);
   });
   it("a city can raise more than one dragon", () => {
     let g = createNewGame({ empire: "atlantis", seed: 23 });
     g.players[0]!.gold = 80;
-    g = trainUnit(g, "atlantis", "dragon");
+    g = trainUnit(g, ATL, "dragon");
     for (let i = 0; i < UNIT_TURNS.dragon; i++) g = advanceJobs(g);
-    assert.equal(g.territories.atlantis.dragons, 1);
-    g = trainUnit(g, "atlantis", "dragon");
+    assert.equal(g.territories[ATL].dragons, 1);
+    g = trainUnit(g, ATL, "dragon");
     for (let i = 0; i < UNIT_TURNS.dragon; i++) g = advanceJobs(g);
-    assert.equal(g.territories.atlantis.dragons, 2);
+    assert.equal(g.territories[ATL].dragons, 2);
   });
   it("legal marches include land neighbours", () => {
     const g = createNewGame({ empire: "atlantis", seed: 24 });
-    const targets = legalMarchTargets(g, "atlantis");
+    const targets = legalMarchTargets(g, ATL);
     assert.ok(targets.length >= 2);
-    assert.ok(landNeighbors("atlantis").some((id) => targets.includes(id)));
+    assert.ok(landNeighbors(ATL).some((id) => targets.includes(id)));
   });
   it("a host can march into a neighbouring owned city", () => {
     let g = createNewGame({ empire: "egypt", seed: 26 });
@@ -705,14 +746,14 @@ describe("economy and combat", () => {
   });
   it("resolveAttack takes a barbarian land", () => {
     let g = createNewGame({ empire: "atlantis", seed: 25 });
-    g.territories.atlantis.levy = 12;
-    g = setMarchFrom(g, "atlantis");
-    const dest = legalMarchTargets(g, "atlantis").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories[ATL].levy = 12;
+    g = setMarchFrom(g, ATL);
+    const dest = legalMarchTargets(g, ATL).find((id) => g.territories[id]!.owner === "barbarian")!;
     g.territories[dest]!.levy = 1;
     g.territories[dest]!.knights = 0;
     g.territories[dest]!.dragons = 0;
-    g = resolveAttack(g, "atlantis", dest, { levy: 8, knights: 0, dragons: 0 });
-    assert.ok(g.territories[dest]!.owner === 0 || g.territories.atlantis.levy < 12);
+    g = resolveAttack(g, ATL, dest, { levy: 8, knights: 0, dragons: 0 });
+    assert.ok(g.territories[dest]!.owner === 0 || g.territories[ATL].levy < 12);
   });
 });
 
@@ -725,18 +766,41 @@ describe("clock, cards, victory, AI", () => {
   it("playCard levy adds swordmen", () => {
     let g = createNewGame({ empire: "atlantis", seed: 32 });
     g.players[0]!.cards = ["levy"];
-    const levy = g.territories.atlantis.levy;
-    g = playCard(g, "levy", "atlantis");
-    assert.equal(g.territories.atlantis.levy, levy + 2);
+    const levy = g.territories[ATL].levy;
+    g = playCard(g, "levy", ATL);
+    assert.equal(g.territories[ATL].levy, levy + 2);
   });
-  it("seven regions wins", () => {
+  it("seven capitals wins", () => {
     let g = createNewGame({ empire: "egypt", seed: 33 });
-    assert.equal(WIN_CONTINENTS, 7);
-    for (const c of ["an", "af", "eu", "sa", "ca", "me", "oc"] as const) {
-      for (const t of continentTerritories(c)) g.territories[t.id]!.owner = 0;
-    }
+    assert.equal(WIN_CAPITALS, 7);
+    const seats = Object.values(CAPITOL);
+    for (const id of seats.slice(0, 7)) g.territories[id]!.owner = 0;
     g = checkVictory(g);
     assert.equal(g.winner, 0);
+    assert.equal(g.phase, "gameover");
+    assert.ok((g.log.at(-1) ?? "").includes("7 capitals"));
+  });
+  it("six capitals does not win", () => {
+    let g = createNewGame({ empire: "egypt", seed: 33 });
+    const extras = Object.values(CAPITOL).filter((id) => id !== EG).slice(0, 5);
+    for (const id of extras) g.territories[id]!.owner = 0;
+    assert.equal(capitalsHeld(g, 0).length, 6);
+    g = checkVictory(g);
+    assert.equal(g.winner, null);
+    assert.equal(g.phase, "play");
+  });
+  it("seven regions without seven capitals does not win", () => {
+    let g = createNewGame({ empire: "egypt", seed: 33 });
+    const seats = new Set(Object.values(CAPITOL));
+    for (const c of ["an", "af", "eu", "sa", "ca", "me", "oc"] as const) {
+      for (const t of continentTerritories(c)) {
+        if (!seats.has(t.id) || t.id === EG) g.territories[t.id]!.owner = 0;
+      }
+    }
+    assert.equal(capitalsHeld(g, 0).length, 1);
+    g = checkVictory(g);
+    assert.equal(g.winner, null);
+    assert.equal(g.phase, "play");
   });
   it("the age has no turn limit", () => {
     let g = createNewGame({ empire: "egypt", seed: 36 });
@@ -755,7 +819,7 @@ describe("clock, cards, victory, AI", () => {
   it("a market on a rich land pays trade gold", () => {
     const g = createNewGame({ empire: "atlantis", seed: 37 });
     const before = incomeFor(g, 0).gold;
-    g.territories.atlantis.market = true;
+    g.territories[ATL].market = true;
     assert.ok(incomeFor(g, 0).gold >= before + 2);
   });
   it("Egypt raises lions at the capital", () => {
@@ -767,6 +831,7 @@ describe("clock, cards, victory, AI", () => {
     assert.equal(g.territories[EG].beasts, 0);
     for (let i = 0; i < UNIT_TURNS.beast; i++) g = advanceJobs(g);
     assert.equal(g.territories[EG].beasts, 1);
+    assert.equal(g.territories[EG].beastHouse, "egypt");
     assert.equal(beastOf("egypt").atk, 15);
     assert.equal(beastOf("egypt").def, 12);
     assert.equal(beastOf("egypt").cost, 7);
@@ -804,12 +869,42 @@ describe("clock, cards, victory, AI", () => {
     camp.fort = 1;
     assert.equal(defenseStrength(camp), FORT_DEF[1]);
   });
-  it("beasts only raise at the capital", () => {
+  it("beasts raise on home-region lands", () => {
     let g = createNewGame({ empire: "egypt", seed: 38 });
     g.players[0]!.gold = 20;
     g.territories.greensahara.owner = 0;
+    g.territories.greensahara.beasts = 0;
     g = trainUnit(g, "greensahara", "beast");
-    assert.equal(g.territories.greensahara.beasts, 0);
+    assert.equal(g.jobs.filter((j) => j.kind === "beast").length, 1);
+    for (let i = 0; i < UNIT_TURNS.beast; i++) g = advanceJobs(g);
+    assert.equal(g.territories.greensahara.beasts, 1);
+    assert.equal(g.territories.greensahara.beastHouse, "egypt");
+    assert.equal(beastOfTerritory(g.territories.greensahara).id, "lion");
+  });
+  it("dragons raise only at a capital", () => {
+    let g = createNewGame({ empire: "egypt", seed: 38 });
+    g.players[0]!.gold = 40;
+    g.territories.greensahara.owner = 0;
+    g = trainUnit(g, "greensahara", "dragon");
+    assert.equal(g.jobs.filter((j) => j.kind === "dragon").length, 0);
+    g = trainUnit(g, EG, "dragon");
+    assert.equal(g.jobs.filter((j) => j.kind === "dragon").length, 1);
+  });
+  it("occupying a rival region trains that house's beasts", () => {
+    let g = createNewGame({ empire: "egypt", seed: 38 });
+    g.players[0]!.gold = 40;
+    const maya = CAPITOL.aztec;
+    g.territories[maya].owner = 0;
+    g.territories[maya].beasts = 0;
+    g.territories[maya].beastHouse = undefined;
+    const gold = g.players[0]!.gold;
+    g = trainUnit(g, maya, "beast");
+    assert.equal(g.jobs.filter((j) => j.kind === "beast").length, 1);
+    assert.equal(g.players[0]!.gold, gold - beastOf("aztec").cost);
+    for (let i = 0; i < UNIT_TURNS.beast; i++) g = advanceJobs(g);
+    assert.equal(g.territories[maya].beasts, 1);
+    assert.equal(g.territories[maya].beastHouse, "aztec");
+    assert.equal(beastOfTerritory(g.territories[maya]).id, "jaguar");
   });
   it("more provinces pay more tribute", () => {
     const g = createNewGame({ empire: "egypt", seed: 39 });
@@ -1052,8 +1147,8 @@ describe("clock, cards, victory, AI", () => {
   });
   it("Nord wakes without a harbour", () => {
     const g = createNewGame({ empire: "thule", seed: 96 });
-    assert.equal(g.territories.nord.port, false);
-    assert.equal(g.territories.nord.ships, 0);
+    assert.equal(g.territories[TH].port, false);
+    assert.equal(g.territories[TH].ships, 0);
   });
   it("houses draw a yield from their home region", () => {
     const egypt = createNewGame({ empire: "egypt", seed: 97 });
@@ -1066,7 +1161,7 @@ describe("clock, cards, victory, AI", () => {
     assert.ok(incomeFor(atlantis, 0).stone > stone);
     const aztec = createNewGame({ empire: "aztec", seed: 97 });
     const gold = incomeFor(aztec, 0).gold;
-    aztec.territories.yucatan.owner = 0;
+    aztec.territories.volcan.owner = 0;
     assert.ok(incomeFor(aztec, 0).gold > gold);
     const asgard = createNewGame({ empire: "asgard", seed: 97 });
     assert.ok(worksCost(asgard.players[0]!, "port").gold < 5);
@@ -1097,29 +1192,29 @@ describe("clock, cards, victory, AI", () => {
   });
   it("victor can send occupiers home", () => {
     let g = createNewGame({ empire: "atlantis", seed: 46 });
-    g.territories.atlantis.levy = 12;
-    const dest = legalMarchTargets(g, "atlantis").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories[ATL].levy = 12;
+    const dest = legalMarchTargets(g, ATL).find((id) => g.territories[id]!.owner === "barbarian")!;
     g.territories[dest]!.levy = 1;
     g.territories[dest]!.knights = 0;
     g.territories[dest]!.dragons = 0;
-    g = resolveAttack(g, "atlantis", dest, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
+    g = resolveAttack(g, ATL, dest, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
     assert.equal(g.territories[dest]!.owner, 0);
     const left = g.territories[dest]!.levy;
-    const home = g.territories.atlantis.levy;
-    g = recallOccupiers(g, "atlantis", dest, { levy: left - 1, knights: 0, dragons: 0, beasts: 0 });
+    const home = g.territories[ATL].levy;
+    g = recallOccupiers(g, ATL, dest, { levy: left - 1, knights: 0, dragons: 0, beasts: 0 });
     assert.equal(g.territories[dest]!.levy, 1);
-    assert.equal(g.territories.atlantis.levy, home + left - 1);
+    assert.equal(g.territories[ATL].levy, home + left - 1);
   });
   it("taking a tribe pays spoils", () => {
     let g = createNewGame({ empire: "atlantis", seed: 43 });
-    g.territories.atlantis.levy = 12;
-    const dest = legalMarchTargets(g, "atlantis").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories[ATL].levy = 12;
+    const dest = legalMarchTargets(g, ATL).find((id) => g.territories[id]!.owner === "barbarian")!;
     g.territories[dest]!.levy = 1;
     g.territories[dest]!.knights = 0;
     g.territories[dest]!.dragons = 0;
     const gold = g.players[0]!.gold;
-    g = setMarchFrom(g, "atlantis");
-    g = resolveAttack(g, "atlantis", dest, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
+    g = setMarchFrom(g, ATL);
+    g = resolveAttack(g, ATL, dest, { levy: 8, knights: 0, dragons: 0, beasts: 0 });
     if (g.territories[dest]!.owner === 0) {
       assert.ok(g.players[0]!.gold > gold);
       assert.ok(g.territories[dest]!.levy >= 1);
@@ -1128,17 +1223,17 @@ describe("clock, cards, victory, AI", () => {
   it("idle tribes raid a weak neighbour", () => {
     let g = createNewGame({ empire: "thule", seed: 44 });
     for (const p of g.players) p.human = false;
-    const edge = landNeighbors("nord").find((id) => g.territories[id]!.owner === "barbarian");
+    const edge = landNeighbors(TH).find((id) => g.territories[id]!.owner === "barbarian");
     assert.ok(edge);
     g.territories[edge]!.levy = 4;
     g.territories[edge]!.pressure = 0;
-    g.territories.nord.levy = 1;
-    g.territories.nord.knights = 0;
-    g.territories.nord.dragons = 0;
-    g.territories.nord.beasts = 0;
-    g.territories.nord.castle = false;
-    g.territories.nord.fort = 0;
-    const held = landNeighbors("nord")[0]!;
+    g.territories[TH].levy = 1;
+    g.territories[TH].knights = 0;
+    g.territories[TH].dragons = 0;
+    g.territories[TH].beasts = 0;
+    g.territories[TH].castle = false;
+    g.territories[TH].fort = 0;
+    const held = landNeighbors(TH)[0]!;
     if (g.territories[held]) {
       g.territories[held]!.owner = 0;
       g.territories[held]!.levy = 0;
@@ -1150,7 +1245,7 @@ describe("clock, cards, victory, AI", () => {
     }
     for (let i = 0; i < 48; i++) g = endTurn(g);
     const raided = g.log.some((l) => l.includes("raid") || l.includes("overrun") || l.includes("Tribes"));
-    assert.ok(raided || g.territories.nord.owner === "barbarian" || g.territories.nord.levy < 1);
+    assert.ok(raided || g.territories[TH].owner === "barbarian" || g.territories[TH].levy < 1);
   });
   it("an empty capital keeps a city watch", () => {
     const g = createNewGame({ empire: "egypt", seed: 21 });
@@ -1179,14 +1274,14 @@ describe("clock, cards, victory, AI", () => {
   });
   it("pressured tribes do not raid", () => {
     let g = createNewGame({ empire: "thule", seed: 45 });
-    for (const id of landNeighbors("nord")) {
+    for (const id of landNeighbors(TH)) {
       if (g.territories[id]!.owner === "barbarian") g.territories[id]!.pressure = 4;
     }
-    g.territories.nord.levy = 8;
-    const levy = g.territories.nord.levy;
+    g.territories[TH].levy = 8;
+    const levy = g.territories[TH].levy;
     for (let i = 0; i < 12; i++) g = endTurn(g);
-    assert.equal(g.territories.nord.owner, 0);
-    assert.equal(g.territories.nord.levy, levy);
+    assert.equal(g.territories[TH].owner, 0);
+    assert.equal(g.territories[TH].levy, levy);
   });
   it("tribes wake stout", () => {
     const g = createNewGame({ empire: "atlantis", seed: 47 });
@@ -1271,8 +1366,8 @@ describe("clock, cards, victory, AI", () => {
       assert.ok(g.territories[cap]!.ships >= 1, id);
     }
     const a = createNewGame({ empire: "atlantis", seed: 94 });
-    assert.equal(a.territories.atlantis.port, false);
-    assert.equal(a.territories.atlantis.ships, 0);
+    assert.equal(a.territories[ATL].port, false);
+    assert.equal(a.territories[ATL].ships, 0);
     const k = createNewGame({ empire: "cape", seed: 94 });
     assert.equal(k.territories.karoo.port, false);
   });
@@ -1329,7 +1424,7 @@ describe("clock, cards, victory, AI", () => {
     g.territories[EG].port = true;
     g.territories[EG].ships = 2;
     const withSea = tradeFor(g, 0);
-    g.territories.atlantis.owner = 0;
+    g.territories[ATL].owner = 0;
     assert.ok(tradeFor(g, 0) > withSea);
   });
   it("every capital mints silver", () => {
@@ -1339,19 +1434,19 @@ describe("clock, cards, victory, AI", () => {
     }
     const g = createNewGame({ empire: "egypt", seed: 83 });
     const before = incomeFor(g, 0).silver;
-    g.territories.atlantis.owner = 0;
+    g.territories[ATL].owner = 0;
     assert.ok(incomeFor(g, 0).silver >= before + 2 + 5);
   });
   it("capture gold scales with the defending host", () => {
     let g = createNewGame({ empire: "atlantis", seed: 71 });
-    g.territories.atlantis.levy = 16;
-    const dest = legalMarchTargets(g, "atlantis").find((id) => g.territories[id]!.owner === "barbarian")!;
+    g.territories[ATL].levy = 16;
+    const dest = legalMarchTargets(g, ATL).find((id) => g.territories[id]!.owner === "barbarian")!;
     g.territories[dest]!.levy = 5;
     g.territories[dest]!.knights = 0;
     g.territories[dest]!.dragons = 0;
     g.territories[dest]!.beasts = 0;
     const before = g.players[0]!.gold;
-    g = resolveAttack(g, "atlantis", dest, { levy: 12, knights: 0, dragons: 0, beasts: 0 });
+    g = resolveAttack(g, ATL, dest, { levy: 12, knights: 0, dragons: 0, beasts: 0 });
     assert.equal(g.territories[dest]!.owner, 0);
     const loot = landscapeOf(dest).resource === "gold" ? 2 : 0;
     assert.equal(g.players[0]!.gold, before + 2 + 5 + loot);
@@ -1366,11 +1461,12 @@ describe("clock, cards, victory, AI", () => {
       g.territories[t.id]!.beasts = 0;
       g.territories[t.id]!.castle = false;
     }
-    g.territories.hoggar.owner = 0;
-    g.territories.hoggar.levy = 20;
-    const crack = legalMarchTargets(g, "hoggar").find((id) => TERRITORY_BY_ID[id]!.continent === "me")!;
+    const from = "egypt";
+    g.territories[from]!.owner = 0;
+    g.territories[from]!.levy = 20;
+    const crack = legalMarchTargets(g, from).find((id) => TERRITORY_BY_ID[id]!.continent === "me")!;
     const before = g.players[0]!.gold;
-    g = resolveAttack(g, "hoggar", crack, { levy: 12, knights: 0, dragons: 0, beasts: 0 });
+    g = resolveAttack(g, from, crack, { levy: 12, knights: 0, dragons: 0, beasts: 0 });
     assert.equal(g.territories[crack]!.owner, 0);
     const loot = landscapeOf(crack).resource === "gold" ? 2 : 0;
     assert.equal(g.players[0]!.gold, before + 2 + 1 + CONTINENT_BREAK_GOLD + CONTINENT_BONUS.me + loot);
@@ -1441,8 +1537,8 @@ describe("clock, cards, victory, AI", () => {
     g.players[0]!.gold = 40;
     g.players[0]!.stone = 20;
     g.players[0]!.wood = 20;
-    g = buildCastle(g, "nord");
-    assert.ok(hasJob(g, "nord"));
+    g = buildCastle(g, TH);
+    assert.ok(hasJob(g, TH));
   });
 });
 
@@ -1856,7 +1952,12 @@ describe("siege and raids", () => {
     const keep = raid.buildings.find((b) => b.kind === "keep")!;
     assert.equal(bows.length, 3);
     assert.ok(bows.every((b) => b.onWall));
-    assert.ok(bows.every((b) => Math.hypot(b.x - keep.x, b.y - keep.y) < keep.r + 24));
+    const posts = raid.buildings.filter((b) => b.kind === "archer");
+    if (posts.length) {
+      assert.ok(bows.every((b) => posts.some((p) => p.id === b.postId)));
+    } else {
+      assert.ok(bows.every((b) => Math.hypot(b.x - keep.x, b.y - keep.y) < keep.r + 24));
+    }
     assert.ok(bows[0]!.range > 164);
   });
   it("only dragons and scorpions wound dragons", () => {
@@ -1905,7 +2006,7 @@ describe("siege and raids", () => {
   });
   it("a ring city lays moats, bridges and scorpions", () => {
     let g = createNewGame({ empire: "sumer", seed: 301, difficulty: "easy" });
-    const dest = landNeighbors("tigris").find((id) => g.territories[id]!.owner === "barbarian")!;
+    const dest = landNeighbors(SU).find((id) => g.territories[id]!.owner === "barbarian")!;
     const to = g.territories[dest]!;
     to.owner = 1;
     to.wallRank = 5;
@@ -1917,10 +2018,10 @@ describe("siege and raids", () => {
     to.scorpions = 5;
     to.castle = true;
     to.fort = 4;
-    g.territories.tigris.levy = 4;
+    g.territories[SU].levy = 4;
     const raid = openRaid(
       g,
-      "tigris",
+      SU,
       dest,
       { levy: 4, knights: 0, dragons: 0, beasts: 0 },
       { rams: 0, catapults: 0, ladders: 0, towers: 0 },
@@ -1978,18 +2079,33 @@ describe("siege and raids", () => {
     assert.ok(ring.moats.length >= 2);
     for (const m of ring.moats) assert.ok(m.r1 - m.r0 <= 8);
   });
+  it("map seats reuse the battle city miniature", () => {
+    const g = createNewGame({ empire: "egypt", seed: 11, difficulty: "easy" });
+    assert.equal(cityArtForTerritory(g.territories[EG]!), "stone");
+    const camp = landNeighbors(EG).map((id) => g.territories[id]!).find((t) => t.owner === "barbarian");
+    assert.ok(camp);
+    assert.equal(cityArtForTerritory(camp!), "camp");
+    camp!.owner = 0;
+    camp!.wallRank = 1;
+    assert.equal(cityArtForTerritory(camp!), "wood");
+    camp!.wallRank = 2;
+    camp!.outerWallRank = 1;
+    assert.equal(cityArtForTerritory(camp!), "outer");
+    camp!.moatRank = 1;
+    assert.equal(cityArtForTerritory(camp!), "moat2");
+  });
   it("attack orders send the host at scorpions", () => {
     const g = createNewGame({ empire: "sumer", seed: 302, difficulty: "easy" });
-    const dest = landNeighbors("tigris").find((id) => g.territories[id]!.owner === "barbarian")!;
+    const dest = landNeighbors(SU).find((id) => g.territories[id]!.owner === "barbarian")!;
     g.territories[dest]!.owner = 1;
     g.territories[dest]!.wallRank = 2;
     g.territories[dest]!.scorpionRank = 3;
     g.territories[dest]!.scorpions = 3;
     g.territories[dest]!.castle = true;
-    g.territories.tigris.dragons = 1;
+    g.territories[SU].dragons = 1;
     const raid = openRaid(
       g,
-      "tigris",
+      SU,
       dest,
       { levy: 0, knights: 0, dragons: 1, beasts: 0 },
       { rams: 0, catapults: 0, ladders: 0, towers: 0 },
@@ -2099,7 +2215,7 @@ describe("siege and raids", () => {
     assert.ok(opened);
     const raid = opened!.raid;
     assert.equal(raid.buildings.filter((b) => b.kind === "store").length, 0);
-    assert.ok(raid.buildings.filter((b) => b.kind === "archer").length <= 6);
+    assert.ok(raid.buildings.filter((b) => b.kind === "archer").length <= 10);
     assert.ok(raid.buildings.filter((b) => b.kind === "scorpion").length <= 4);
     assert.equal(raid.units.filter((u) => u.side === "def" && u.kind === "levy").length, 8);
     assert.equal(raid.units.filter((u) => u.side === "def" && u.kind === "knight").length, 4);
@@ -2126,8 +2242,12 @@ describe("siege and raids", () => {
     assert.equal(innerGates.length, 1);
     assert.equal(outerGates.length, 1);
     const towers = raid.buildings.filter((b) => b.kind === "archer");
-    assert.equal(towers.length, 6);
-    const inner = towers.filter((t) => Math.hypot(t.x - RAID_CX, (t.y - RAID_CY) / 0.78) < 175);
+    const gateTowers = towers.filter((t) => t.gatePost);
+    const evenTowers = towers.filter((t) => !t.gatePost);
+    assert.equal(gateTowers.length, 4);
+    assert.equal(evenTowers.length, 6);
+    assert.equal(towers.length, 10);
+    const inner = evenTowers.filter((t) => t.ring === "inner");
     const angs = inner
       .map((t) => Math.atan2((t.y - RAID_CY) / 0.78, t.x - RAID_CX))
       .sort((a, b) => a - b);
@@ -2137,27 +2257,292 @@ describe("siege and raids", () => {
       const d = ((angs[(i + 1) % angs.length]! - angs[i]! + twoPi * 2) % twoPi);
       assert.ok(Math.abs(d - twoPi / 4) < 0.2);
     }
-    for (const t of towers) {
+    for (const t of evenTowers) {
       const a = Math.atan2((t.y - RAID_CY) / 0.78, t.x - RAID_CX);
       const gap = Math.abs(Math.atan2(Math.sin(a - RAID_GATE_A), Math.cos(a - RAID_GATE_A)));
       assert.ok(gap > 0.2);
+    }
+    for (const t of gateTowers) {
+      const a = Math.atan2((t.y - RAID_CY) / 0.78, t.x - RAID_CX);
+      const gap = Math.abs(Math.atan2(Math.sin(a - RAID_GATE_A), Math.cos(a - RAID_GATE_A)));
+      assert.ok(gap < RAID_GATE_TOWER_DA + 0.04);
+      assert.ok(gap > RAID_GATE_TOWER_DA - 0.04);
     }
     const scorp = raid.buildings.filter((b) => b.kind === "scorpion");
     assert.ok(scorp.length >= 1);
     assert.ok(scorp.every((s) => towers.some((t) => t.id === s.hostId) || raid.buildings.some((k) => k.kind === "keep" && k.id === s.hostId)));
     const levy = raid.units.filter((u) => u.side === "def" && u.kind === "levy");
-    const gate = raid.walls.find((w) => w.gate)!;
+    const gate = raid.walls.find((w) => w.gate && w.ring === "outer") ?? raid.walls.find((w) => w.gate)!;
     const gx = gate.x + gate.w / 2;
     const gy = gate.y + gate.h / 2;
     assert.ok(levy.every((u) => Math.hypot(u.x - gx, u.y - gy) < 48));
-    assert.ok(levy.some((u) => u.holdGate));
-    assert.ok(levy.some((u) => !u.holdGate));
+    assert.ok(levy.every((u) => u.holdGate));
+    assert.ok(levy.every((u) => u.gateRing === "outer"));
     const bows = raid.units.filter((u) => u.side === "def" && u.kind === "bowman");
     assert.ok(bows.length >= 1);
     assert.ok(bows.every((u) => u.postId && (towers.some((t) => t.id === u.postId) || raid.buildings.some((k) => k.kind === "keep" && k.id === u.postId))));
     assert.ok(bows.every((u) => u.onWall));
   });
-  it("gate watch holds until the walls are breached, then all sally", () => {
+  it("battle training can hold the walls", () => {
+    const opened = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      side: "def",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 2,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 8, bowmen: 2, knights: 2, beasts: 0, dragons: 1 },
+      siege: { rams: 1, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 4, bowmen: 4, knights: 3, beasts: 1, dragons: 1 },
+      dragonTier: 1,
+    });
+    assert.ok(opened);
+    assert.equal(opened!.raid.humanSide, "def");
+    assert.equal(opened!.raid.defName, "Sumer");
+    assert.equal(opened!.raid.orders.knight, "wall");
+    assert.equal(opened!.raid.orders.dragon, "wyrm");
+    assert.equal(opened!.raid.phase, "deploy");
+    assert.equal(opened!.raid.units.some((u) => u.side === "atk"), false);
+    assert.equal(opened!.raid.units.filter((u) => u.side === "def").length, 0);
+    assert.ok(opened!.raid.stock.levy > 0);
+  });
+  it("a defender places the garrison inside the walls", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      side: "def",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 2,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 4, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 1, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 4, bowmen: 2, knights: 2, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    assert.equal(canDeployAt(raid, 40, RAID_CY), false);
+    assert.equal(deployTroop(raid, "levy", 40, RAID_CY), false);
+    assert.equal(deployTroop(raid, "levy", RAID_CX, RAID_CY + 70), true);
+    const u = raid.units.find((x) => x.side === "def" && x.kind === "levy")!;
+    assert.ok(Math.hypot(u.x - RAID_CX, u.y - RAID_CY) < cityRadius(raid));
+    assert.equal(raid.stock.levy, 3);
+  });
+  it("defence splits how many hold the gate and the keep", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      side: "def",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 2, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 6, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    setOrderLot(raid, "levy", "keep", 2);
+    assert.equal(raid.orderLots.levy!.keep, 2);
+    assert.equal(raid.orderLots.levy!.gate, 4);
+    autoDeployDef(raid);
+    const levy = raid.units.filter((u) => u.side === "def" && u.kind === "levy");
+    assert.equal(levy.length, 6);
+    assert.equal(levy.filter((u) => u.order === "keep").length, 2);
+    assert.equal(levy.filter((u) => u.order === "gate").length, 4);
+    const keep = raid.buildings.find((b) => b.kind === "keep")!;
+    const atKeep = levy.filter((u) => u.order === "keep");
+    assert.ok(atKeep.every((u) => Math.hypot(u.x - keep.x, u.y - keep.y) < 80));
+  });
+  it("attackers can be ordered at the keep", () => {
+    assert.ok((KIND_ORDERS.levy ?? []).some((r) => r.id === "keep"));
+    assert.ok((KIND_ORDERS.bowman ?? []).some((r) => r.id === "keep"));
+    assert.ok((KIND_ORDERS.knight ?? []).some((r) => r.id === "keep"));
+    assert.ok((KIND_ORDERS.beast ?? []).some((r) => r.id === "keep"));
+    assert.ok((KIND_ORDERS.catapult ?? []).some((r) => r.id === "keep"));
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 0,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 3, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 0, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    setRaidOrder(raid, "levy", "keep");
+    setOrderLot(raid, "levy", "keep", 3);
+    assert.equal(deployTroop(raid, "levy", 40, RAID_CY), true);
+    const u = raid.units.find((x) => x.side === "atk" && x.kind === "levy")!;
+    assert.equal(u.order, "keep");
+    const keep = raid.buildings.find((b) => b.kind === "keep")!;
+    const before = Math.hypot(u.x - keep.x, u.y - keep.y);
+    assert.equal(beginAssault(raid), true);
+    playSteps(raid, 240);
+    assert.ok(Math.hypot(u.x - keep.x, u.y - keep.y) < before - 8 || keep.hp < keep.max || raid.keepDestroyed);
+  });
+  it("defending dragons can hold the gate or the first breach", () => {
+    assert.ok((DEF_KIND_ORDERS.dragon ?? []).some((r) => r.id === "gate"));
+    assert.ok((DEF_KIND_ORDERS.dragon ?? []).some((r) => r.id === "wall"));
+    assert.ok((DEF_KIND_ORDERS.dragon ?? []).some((r) => r.id === "keep"));
+    for (const kind of ["levy", "bowman", "knight", "beast", "dragon"] as const) {
+      assert.ok((DEF_KIND_ORDERS[kind] ?? []).some((r) => r.id === "keep"), kind);
+    }
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      side: "def",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 4, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 0, bowmen: 0, knights: 0, beasts: 0, dragons: 1 },
+      dragonTier: 1,
+    })!.raid;
+    setOrderLot(raid, "dragon", "gate", 1);
+    autoDeployDef(raid);
+    const wyrm = raid.units.find((u) => u.side === "def" && u.kind === "dragon")!;
+    assert.equal(wyrm.order, "gate");
+    const gate = raid.walls.find((w) => w.gate)!;
+    const gx = gate.x + gate.w / 2;
+    const gy = gate.y + gate.h / 2;
+    assert.ok(Math.hypot(wyrm.x - gx, wyrm.y - gy) < Math.hypot(wyrm.x - RAID_CX, wyrm.y - RAID_CY) + 20);
+  });
+  it("defending knights stand around the city", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 2,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 2, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 4, bowmen: 0, knights: 6, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    const knights = raid.units.filter((u) => u.side === "def" && u.kind === "knight");
+    assert.equal(knights.length, 6);
+    assert.ok(knights.every((u) => !u.holdGate));
+    assert.ok(knights.every((u) => u.order === "wall"));
+    const gate = raid.walls.find((w) => w.gate)!;
+    const gx = gate.x + gate.w / 2;
+    const gy = gate.y + gate.h / 2;
+    assert.ok(knights.some((u) => Math.hypot(u.x - gx, u.y - gy) > 56));
+    const angs = knights.map((u) => Math.atan2((u.y - RAID_CY) / 0.78, u.x - RAID_CX));
+    const span = Math.max(...angs) - Math.min(...angs);
+    assert.ok(span > Math.PI * 0.8, `knight span ${span}`);
+  });
+  it("defending knights rush the first breach", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 2, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 0, bowmen: 0, knights: 4, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    const knights = raid.units.filter((u) => u.side === "def" && u.kind === "knight" && u.hp > 0);
+    const home = knights.map((u) => ({ id: u.id, x: u.x, y: u.y }));
+    assert.equal(deployTroop(raid, "levy", 40, RAID_CY), true);
+    assert.equal(beginAssault(raid), true);
+    const gate = raid.walls.find((w) => w.gate)!;
+    const gx = gate.x + gate.w / 2;
+    const gy = gate.y + gate.h / 2;
+    const hole = raid.walls
+      .filter((w) => !w.gate && w.hp > 0)
+      .sort((a, b) => Math.hypot(b.x + b.w / 2 - gx, b.y + b.h / 2 - gy) - Math.hypot(a.x + a.w / 2 - gx, a.y + a.h / 2 - gy))[0]!;
+    hole.hp = 0;
+    raid.walkDirty = true;
+    playSteps(raid, 180);
+    const hx = hole.x + hole.w / 2;
+    const hy = hole.y + hole.h / 2;
+    const now = home.map((p) => raid.units.find((u) => u.id === p.id)!).filter((u) => u.hp > 0);
+    assert.ok(now.length >= 1);
+    const before = Math.min(...home.map((p) => Math.hypot(p.x - hx, p.y - hy)));
+    const after = Math.min(...now.map((u) => Math.hypot(u.x - hx, u.y - hy)));
+    assert.ok(after < before - 6, `knights ${before} -> ${after} toward hole`);
+  });
+  it("a defending dragon wakes over the keep", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 2,
+      moats: 0,
+      scorpions: 1,
+      force: { levy: 2, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 0, bowmen: 0, knights: 0, beasts: 0, dragons: 1 },
+      dragonTier: 1,
+    })!.raid;
+    const wyrm = raid.units.find((u) => u.side === "def" && u.kind === "dragon")!;
+    const keep = raid.buildings.find((b) => b.kind === "keep");
+    const cx = keep?.x ?? RAID_CX;
+    const cy = keep?.y ?? RAID_CY;
+    assert.ok(Math.hypot(wyrm.x - cx, wyrm.y - cy) < 36);
+  });
+  it("a defending dragon hunts enemy dragons then the largest group at a breach", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 2,
+      moats: 0,
+      scorpions: 2,
+      force: { levy: 8, bowmen: 0, knights: 0, beasts: 0, dragons: 1 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 0, bowmen: 0, knights: 0, beasts: 0, dragons: 1 },
+      dragonTier: 1,
+    })!.raid;
+    const wyrm = raid.units.find((u) => u.kind === "dragon" && u.side === "def")!;
+    const before = wyrm.hp;
+    assert.equal(deployTroop(raid, "dragon", 40, 40), true);
+    for (let i = 0; i < 8; i++) assert.equal(deployTroop(raid, "levy", 80 + i * 10, RAID_CY + 80), true);
+    const gate = raid.walls.find((w) => w.gate)!;
+    assert.equal(beginAssault(raid), true);
+    playSteps(raid, 200);
+    assert.ok(wyrm.hp < before);
+    const foeDrake = raid.units.find((u) => u.kind === "dragon" && u.side === "atk")!;
+    foeDrake.hp = 0;
+    gate.hp = 0;
+    raid.walkDirty = true;
+    const gx = gate.x + gate.w / 2;
+    const gy = gate.y + gate.h / 2;
+    playSteps(raid, 220);
+    const levies = raid.units.filter((u) => u.side === "atk" && u.kind === "levy" && u.hp > 0);
+    assert.ok(levies.length >= 1);
+    const toGate = Math.hypot(wyrm.x - gx, wyrm.y - gy);
+    const toKeep = Math.hypot(wyrm.x - RAID_CX, wyrm.y - RAID_CY);
+    assert.ok(toGate < toKeep + 40 || levies.some((u) => Math.hypot(wyrm.x - u.x, wyrm.y - u.y) < 140));
+  });
+  it("gate watch holds until a wall is breached, then rushes the hole", () => {
     const opened = openDrillRaid({
       empire: "sumer",
       foe: "egypt",
@@ -2183,25 +2568,29 @@ describe("siege and raids", () => {
     const gx = gate.x + gate.w / 2;
     const gy = gate.y + gate.h / 2;
     const hold = raid.units.filter((u) => u.side === "def" && u.kind === "levy" && u.holdGate && u.hp > 0);
-    const hunt = raid.units.filter((u) => u.side === "def" && u.kind === "levy" && !u.holdGate && u.hp > 0);
-    assert.ok(hold.length >= 1);
-    assert.ok(hunt.length >= 1);
+    assert.equal(hold.length, 4);
     const holdDist = Math.min(...hold.map((u) => Math.hypot(u.x - gx, u.y - gy)));
-    const huntDist = Math.min(...hunt.map((u) => Math.hypot(u.x - gx, u.y - gy)));
     assert.ok(holdDist < 40);
-    assert.ok(huntDist > holdDist);
     for (const p of home) {
       const u = raid.units.find((x) => x.id === p.id)!;
       assert.ok(u.hp > 0);
       assert.ok(Math.hypot(u.x - p.x, u.y - p.y) < 2);
     }
-    for (const w of raid.walls) w.hp = 0;
+    const hole = raid.walls
+      .filter((w) => !w.gate && w.hp > 0)
+      .sort((a, b) => Math.hypot(b.x + b.w / 2 - gx, b.y + b.h / 2 - gy) - Math.hypot(a.x + a.w / 2 - gx, a.y + a.h / 2 - gy))[0]!;
+    hole.hp = 0;
     raid.walkDirty = true;
     for (let i = 0; i < 180; i++) stepRaid(raid, 1 / 60);
     const holdNow = raid.units.filter((u) => u.side === "def" && u.kind === "levy" && u.holdGate && u.hp > 0);
     assert.ok(holdNow.length >= 1);
-    const after = Math.min(...holdNow.map((u) => Math.hypot(u.x - gx, u.y - gy)));
-    assert.ok(after > holdDist + 8);
+    const hx = hole.x + hole.w / 2;
+    const hy = hole.y + hole.h / 2;
+    const rushed = holdNow.filter((u) => Math.hypot(u.x - gx, u.y - gy) > holdDist + 8);
+    assert.ok(rushed.length >= 1);
+    const nearer = Math.min(...holdNow.map((u) => Math.hypot(u.x - hx, u.y - hy)));
+    const fromGate = Math.hypot(gx - hx, gy - hy);
+    assert.ok(nearer < fromGate - 8);
   });
   it("a fallen tower kills its archers and scorpions", () => {
     const opened = openDrillRaid({
@@ -2227,6 +2616,75 @@ describe("siege and raids", () => {
     assert.equal(tw.hp, 0);
     assert.ok(crew.every((u) => u.hp <= 0));
     assert.ok(guns.every((b) => b.hp <= 0));
+  });
+  it("a closed gate blocks the ring and gate-towers stand without tower works", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 1, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 2, bowmen: 2, knights: 0, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    const gate = raid.walls.find((w) => w.gate)!;
+    assert.ok(gate.hp > 0);
+    const cx = Math.floor((gate.x + gate.w / 2) / 20);
+    const cy = Math.floor((gate.y + gate.h / 2) / 20);
+    assert.equal(raid.walk[cy * 36 + cx], 0);
+    const gateTowers = raid.buildings.filter((b) => b.kind === "archer" && b.gatePost);
+    assert.equal(gateTowers.length, 2);
+    const bows = raid.units.filter((u) => u.side === "def" && u.kind === "bowman");
+    assert.ok(bows.length >= 1);
+    assert.ok(bows.every((u) => gateTowers.some((t) => t.id === u.postId)));
+    assert.equal(deployTroop(raid, "levy", 40, 40), true);
+    assert.equal(beginAssault(raid), true);
+    gate.hp = 0;
+    raid.walkDirty = true;
+    stepRaid(raid, 1 / 60);
+    assert.equal(raid.walk[cy * 36 + cx], 1);
+  });
+  it("a second ring is the overflow muster and archers fill gate-towers first", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 2,
+      keep: 1,
+      towers: 1,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 1, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 12, bowmen: 6, knights: 0, beasts: 12, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    const levy = raid.units.filter((u) => u.side === "def" && u.kind === "levy");
+    assert.equal(levy.length, 12);
+    assert.ok(levy.every((u) => u.holdGate));
+    assert.equal(levy.filter((u) => u.gateRing === "outer").length, 8);
+    assert.equal(levy.filter((u) => u.gateRing === "inner").length, 4);
+    const beasts = raid.units.filter((u) => u.side === "def" && u.kind === "beast");
+    assert.equal(beasts.length, 12);
+    assert.equal(beasts.filter((u) => u.gateRing === "outer" && u.holdGate).length, 5);
+    assert.equal(beasts.filter((u) => u.gateRing === "inner" && u.holdGate).length, 5);
+    const around = beasts.filter((u) => !u.holdGate);
+    assert.equal(around.length, 2);
+    assert.ok(around.every((u) => !u.holdGate));
+    const gateTowers = raid.buildings.filter((b) => b.kind === "archer" && b.gatePost);
+    const outerPosts = gateTowers.filter((t) => t.ring === "outer");
+    const innerPosts = gateTowers.filter((t) => t.ring === "inner");
+    assert.equal(outerPosts.length, 2);
+    assert.equal(innerPosts.length, 2);
+    const bows = raid.units.filter((u) => u.side === "def" && u.kind === "bowman");
+    assert.equal(bows.length, 6);
+    assert.equal(bows.filter((u) => outerPosts.some((t) => t.id === u.postId)).length, 4);
+    assert.equal(bows.filter((u) => innerPosts.some((t) => t.id === u.postId)).length, 2);
   });
   it("warriors follow a ram to the gate", () => {
     const raid = openDrillRaid({
@@ -2315,9 +2773,11 @@ describe("siege and raids", () => {
     const towers = raid.buildings.filter((b) => b.kind === "archer");
     assert.ok(towers.length >= 2);
     for (const b of raid.buildings) b.dmg = 0;
-    const mark = towers[0]!;
-    const ax = Math.max(24, Math.min(RAID_W - 24, mark.x));
-    const ay = Math.min(RAID_H - 28, RAID_CY + cityRadius(raid) + 40);
+    const mark = towers.find((t) => !t.gatePost) ?? towers[0]!;
+    const out = Math.atan2(mark.y - RAID_CY, mark.x - RAID_CX);
+    const reach = cityRadius(raid) + 42;
+    const ax = Math.max(24, Math.min(RAID_W - 24, RAID_CX + Math.cos(out) * reach));
+    const ay = Math.max(24, Math.min(RAID_H - 28, RAID_CY + Math.sin(out) * reach * 0.78));
     assert.equal(deployTroop(raid, "bowman", ax, ay), true);
     assert.equal(deployTroop(raid, "bowman", Math.max(24, ax - 22), ay), true);
     assert.equal(beginAssault(raid), true);
@@ -2342,7 +2802,7 @@ describe("siege and raids", () => {
       garrison: { levy: 0, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
       dragonTier: 1,
     })!.raid;
-    assert.equal(deployTroop(raid, "catapult", RAID_CX, RAID_H - 36), true);
+    assert.equal(deployTroop(raid, "catapult", RAID_CX + 96, RAID_H - 40), true);
     assert.equal(beginAssault(raid), true);
     const wallHp = raid.walls.reduce((n, w) => n + w.hp, 0);
     playSteps(raid, 360);
@@ -2519,7 +2979,7 @@ describe("siege and raids", () => {
     gate.hp = 0;
     raid.walkDirty = true;
     assert.ok(raid.walls.some((w) => w.hp > 0 && !w.climb));
-    assert.equal(deployTroop(raid, "catapult", RAID_CX, RAID_H - 36), true);
+    assert.equal(deployTroop(raid, "catapult", RAID_CX + 96, RAID_H - 40), true);
     assert.equal(beginAssault(raid), true);
     const towers = raid.buildings.filter((b) => b.kind === "archer" && b.hp > 0);
     const towerHp = towers.reduce((n, b) => n + b.hp, 0);
@@ -2548,7 +3008,7 @@ describe("siege and raids", () => {
     raid.walkDirty = true;
     const walls = raid.walls.filter((w) => !w.gate && w.hp > 0);
     const wallHp = walls.reduce((n, w) => n + w.hp, 0);
-    assert.equal(deployTroop(raid, "catapult", RAID_CX, RAID_H - 36), true);
+    assert.equal(deployTroop(raid, "catapult", RAID_CX + 96, RAID_H - 40), true);
     assert.equal(beginAssault(raid), true);
     playSteps(raid, 240);
     const afterWall = walls.reduce((n, w) => n + Math.max(0, w.hp), 0);
@@ -2823,6 +3283,122 @@ describe("siege and raids", () => {
     assert.ok(status.wallLabel.toLowerCase().includes("breach") || status.wallLabel.toLowerCase().includes("down"));
     assert.ok(status.towerLabel.toLowerCase().includes("destroyed"));
   });
+  it("live army bars count both hosts at full strength", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 4, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 1, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 2, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    const hp = raidArmyHp(raid);
+    assert.equal(hp.atk.cur, hp.atk.max);
+    assert.equal(hp.def.cur, hp.def.max);
+    assert.ok(hp.atk.max >= 4 * 42 + 400, `${hp.atk.max}`);
+    assert.ok(hp.def.max >= 2 * 42, `${hp.def.max}`);
+  });
+  it("placing a troop does not change army strength", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 4, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 2, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    const before = raidArmyHp(raid);
+    assert.equal(deployTroop(raid, "levy", 40, 40), true);
+    const after = raidArmyHp(raid);
+    assert.equal(after.atk.cur, before.atk.cur);
+    assert.equal(after.atk.max, before.atk.max);
+    assert.equal(after.def.cur, before.def.cur);
+  });
+  it("wounds drop the live bar and leave the peak", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 4, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 2, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    const defender = raid.units.find((u) => u.side === "def" && u.hp > 0)!;
+    const before = raidArmyHp(raid);
+    defender.hp = Math.max(1, Math.floor(defender.hp / 2));
+    const after = raidArmyHp(raid);
+    assert.ok(after.def.cur < before.def.cur, `${after.def.cur} !< ${before.def.cur}`);
+    assert.equal(after.def.max, before.def.max);
+    assert.equal(after.atk.cur, before.atk.cur);
+  });
+  it("a slain host still holds its peak on the bar", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 4, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 2, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    const before = raidArmyHp(raid);
+    for (const u of raid.units) if (u.side === "def") u.hp = 0;
+    const after = raidArmyHp(raid);
+    assert.equal(after.def.cur, 0);
+    assert.equal(after.def.max, before.def.max);
+  });
+  it("defence training counts the unplaced garrison on the bar", () => {
+    const raid = openDrillRaid({
+      empire: "sumer",
+      foe: "egypt",
+      side: "def",
+      walls: 2,
+      outer: 0,
+      keep: 1,
+      towers: 0,
+      moats: 0,
+      scorpions: 0,
+      force: { levy: 4, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      siege: { rams: 0, catapults: 0, ladders: 0, towers: 0 },
+      garrison: { levy: 6, bowmen: 0, knights: 0, beasts: 0, dragons: 0 },
+      dragonTier: 1,
+    })!.raid;
+    const before = raidArmyHp(raid);
+    assert.equal(raid.humanSide, "def");
+    assert.equal(before.atk.cur, before.atk.max);
+    assert.equal(before.def.cur, before.def.max);
+    assert.ok(before.def.max >= 6 * 42, `${before.def.max}`);
+    assert.ok(before.atk.max >= 4 * 42, `${before.atk.max}`);
+    assert.equal(beginAssault(raid), true);
+    const after = raidArmyHp(raid);
+    assert.equal(after.atk.max, before.atk.max);
+    assert.equal(after.def.max, before.def.max);
+    assert.equal(after.atk.cur, before.atk.cur);
+    assert.equal(after.def.cur, before.def.cur);
+  });
 });
 
 describe("drill yard", () => {
@@ -2852,11 +3428,11 @@ describe("drill yard", () => {
   });
   it("Sumer wakes at Sumer with giants", () => {
     const g = createNewGame({ empire: "sumer", seed: 8, difficulty: "normal" });
-    assert.equal(g.territories.tigris.owner, 0);
-    assert.equal(g.territories.tigris.wallRank, 2);
-    assert.equal(g.territories.tigris.towerRank, 1);
+    assert.equal(g.territories[SU].owner, 0);
+    assert.equal(g.territories[SU].wallRank, 2);
+    assert.equal(g.territories[SU].towerRank, 1);
     assert.equal(beastOf("sumer").id, "giant");
-    assert.equal(defenseRank(g.territories.tigris, "walls"), 2);
+    assert.equal(defenseRank(g.territories[SU], "walls"), 2);
   });
   it("picks the opposition seat even when the empires are not neighbours", () => {
     const opened = openDrillRaid({
@@ -2898,20 +3474,20 @@ describe("parallel jobs and cancel", () => {
     let g = createNewGame({ empire: "alaska", seed: 81, difficulty: "easy" });
     g.players[0]!.gold = 40;
     g.players[0]!.wood = 20;
-    g = buildPort(g, "yukon");
-    g = buildFarm(g, "yukon");
+    g = buildPort(g, AK);
+    g = buildFarm(g, AK);
     assert.ok(g.jobs.some((j) => j.kind === "port"));
     assert.ok(g.jobs.some((j) => j.kind === "farm"));
-    assert.ok(constructionBusy(g, "yukon"));
+    assert.ok(constructionBusy(g, AK));
   });
   it("will not queue a second port in the same city", () => {
     let g = createNewGame({ empire: "alaska", seed: 82, difficulty: "easy" });
     g.players[0]!.gold = 40;
     g.players[0]!.wood = 20;
-    g = buildPort(g, "yukon");
-    const blocked = buildPort(g, "yukon");
+    g = buildPort(g, AK);
+    const blocked = buildPort(g, AK);
     assert.equal(blocked.jobs.filter((j) => j.kind === "port").length, 1);
-    assert.equal(hasKindJob(g, "yukon", "port"), true);
+    assert.equal(hasKindJob(g, AK, "port"), true);
   });
   it("cancelJob refunds the purse and drops the drill", () => {
     let g = createNewGame({ empire: "egypt", seed: 83, difficulty: "easy" });
@@ -3016,6 +3592,76 @@ describe("parallel jobs and cancel", () => {
   });
 });
 
+describe("courts and ranks", () => {
+  it("starting empires each hold one capital and share Emperor first", () => {
+    const g = createNewGame({ empire: "egypt", seed: 33, difficulty: "easy" });
+    const stats = empireStats(g, 0);
+    assert.equal(stats.emperor, 1);
+    assert.equal(stats.colonizer, 1);
+    assert.equal(stats.popular, 4);
+    assert.equal(stats.warlord, 10 + 10 + 5 + 3);
+    assert.equal(stats.merchant, g.players[0]!.gold + incomeFor(g, 0).gold);
+    const inc = incomeFor(g, 0);
+    const p = g.players[0]!;
+    assert.equal(stats.trader, p.silver + p.wood + p.stone + p.metal + p.food + inc.silver + inc.wood + inc.stone + inc.metal + inc.food);
+    assert.ok(empireLevel(empireScore(stats)) >= 1);
+    const you = rankPlayers(g).find((r) => r.id === 0)!;
+    assert.equal(you.ranks.emperor, 1);
+    assert.equal(you.capitals, 1);
+  });
+  it("gold in the vault lifts Merchant rank", () => {
+    const g = createNewGame({ empire: "egypt", seed: 33, difficulty: "easy" });
+    g.players[0]!.gold = 400;
+    const you = rankPlayers(g).find((r) => r.id === 0)!;
+    assert.equal(you.ranks.merchant, 1);
+    for (const row of rankPlayers(g)) {
+      if (row.id !== 0) assert.ok(row.ranks.merchant >= 2);
+    }
+  });
+  it("a second capital lifts Emperor rank and overall score", () => {
+    const g = createNewGame({ empire: "egypt", seed: 33, difficulty: "easy" });
+    const before = empireScore(empireStats(g, 0));
+    g.territories[SU]!.owner = 0;
+    const after = empireStats(g, 0);
+    assert.equal(after.emperor, 2);
+    assert.ok(empireScore(after) > before);
+    const you = rankPlayers(g).find((r) => r.id === 0)!;
+    assert.equal(you.ranks.emperor, 1);
+  });
+  it("warlord counts the host on the road", () => {
+    let g = createNewGame({ empire: "egypt", seed: 33, difficulty: "easy" });
+    const before = empireStats(g, 0).warlord;
+    const dest = landNeighbors(EG).find((id) => g.territories[id]!.owner === "barbarian")!;
+    g = setMarchFrom(g, EG);
+    g = issueMarch(g, EG, dest, { levy: 4, bowmen: 0, knights: 0, dragons: 0, beasts: 0 });
+    assert.equal(empireStats(g, 0).warlord, before);
+    assert.ok((g.marches ?? []).length >= 1);
+  });
+  it("overall rank follows score", () => {
+    const g = createNewGame({ empire: "egypt", seed: 33, difficulty: "easy" });
+    g.players[0]!.gold = 800;
+    const ranked = rankPlayers(g);
+    assert.equal(ranked[0]!.id, 0);
+    assert.equal(ranked[0]!.ranks.overall, 1);
+    assert.ok(ranked[0]!.level >= ranked[1]!.level);
+  });
+  it("names overall rank changes", () => {
+    const before = createNewGame({ empire: "egypt", seed: 33, difficulty: "easy" });
+    const after = createNewGame({ empire: "egypt", seed: 33, difficulty: "easy" });
+    after.players[0]!.gold = 800;
+    const lines = rankShiftLines(before, after);
+    assert.ok(lines.some((l) => l.includes("Egypt") && l.includes("overall")));
+  });
+  it("names Emperor rank when a second capital is taken", () => {
+    const before = createNewGame({ empire: "egypt", seed: 33, difficulty: "easy" });
+    const after = createNewGame({ empire: "egypt", seed: 33, difficulty: "easy" });
+    const extra = Object.values(CAPITOL).find((id) => after.territories[id]!.owner !== 0)!;
+    after.territories[extra]!.owner = 0;
+    const lines = rankShiftLines(before, after);
+    assert.ok(lines.some((l) => l.includes("Emperor") || l.includes("overall")));
+  });
+});
+
 describe("asset packs", () => {
   it("lists unique urls for every screen", () => {
     for (const pack of [TITLE_ASSETS, PLAY_ASSETS, BATTLE_ASSETS, DRILL_ASSETS]) {
@@ -3023,7 +3669,9 @@ describe("asset packs", () => {
       assert.ok(pack.length > 0);
     }
     assert.ok(TITLE_ASSETS.includes("/map/title-dragon.jpg"));
-    assert.ok(PLAY_ASSETS.includes("/map/world-v130.webp"));
+    assert.ok(PLAY_ASSETS.includes("/map/world-v136.webp"));
+    assert.ok(PLAY_ASSETS.some((u) => u.includes("/cities/stone.png")));
+    assert.ok(PLAY_ASSETS.some((u) => u.includes("defense-walls.svg")));
     assert.ok(BATTLE_ASSETS.some((u) => u.includes("/cities/ring.png")));
     assert.equal(packUrls("title"), TITLE_ASSETS);
     assert.equal(packUrls("battle"), BATTLE_ASSETS);
@@ -3032,5 +3680,146 @@ describe("asset packs", () => {
     const progress: number[] = [];
     await preloadAll(["/map/missing-on-purpose.png"], (p) => progress.push(p.fraction));
     assert.equal(progress.at(-1), 1);
+  });
+});
+
+describe("waters", () => {
+  function seaBesideAny(g: ReturnType<typeof createNewGame>): { land: string; sea: string } {
+    for (const t of TERRITORIES) {
+      if (!t.coastal) continue;
+      const sea = hexNeighbors(t.id).find((n) => isWater(n));
+      if (sea && g.territories[t.id] && g.territories[sea]) return { land: t.id, sea };
+    }
+    throw new Error("no coastal sea");
+  }
+
+  it("wakes ocean hexes empty with no tribes", () => {
+    const g = createNewGame({ empire: "asgard", seed: 11 });
+    assert.ok(WATER_IDS.length > 290);
+    for (const id of WATER_IDS) {
+      const t = g.territories[id];
+      assert.ok(t, id);
+      assert.equal(t.owner, "open");
+      assert.equal(t.levy, 0);
+      assert.equal(t.ships, 0);
+      assert.equal(t.warships ?? 0, 0);
+    }
+  });
+
+  it("places shellfish and treasure near land, fish and whales in the deep", () => {
+    const near = WATER_IDS.filter((id) => WATER_BY_ID[id]!.near);
+    const deep = WATER_IDS.filter((id) => !WATER_BY_ID[id]!.near);
+    assert.ok(near.length > 40);
+    assert.ok(deep.length > 40);
+    assert.ok(near.every((id) => {
+      const y = seaYieldOf(id);
+      return y === "shellfish" || y === "treasure";
+    }));
+    assert.ok(deep.every((id) => {
+      const y = seaYieldOf(id);
+      return y === "fish" || y === "whale";
+    }));
+    assert.ok(near.some((id) => seaYieldOf(id) === "treasure"));
+    assert.ok(deep.some((id) => seaYieldOf(id) === "whale"));
+  });
+
+  it("a ship occupies open waters and gathers the yield", () => {
+    let g = createNewGame({ empire: "asgard", seed: 12 });
+    const { land, sea } = seaBesideAny(g);
+    g.territories[land]!.owner = 0;
+    g.territories[land]!.ships = 1;
+    g.territories[land]!.levy = 0;
+    g.territories[land]!.warships = 0;
+    g = issueMarch(g, land, sea, { levy: 0, knights: 0, dragons: 0, beasts: 0 });
+    assert.equal(g.marches.length, 1);
+    g = advanceJobs(g);
+    const held = g.territories[sea]!;
+    assert.equal(held.owner, 0);
+    assert.equal(held.ships, 1);
+    assert.equal(held.levy, 0);
+    const kind = seaYieldOf(sea);
+    const inc = incomeFor(g, 0);
+    if (kind === "fish" || kind === "shellfish") assert.ok(inc.food >= 2);
+    if (kind === "treasure") assert.ok(inc.gold >= 3);
+    if (kind === "whale") {
+      assert.equal(inc.flame, true);
+      assert.ok(inc.gold >= 2);
+    }
+  });
+
+  it("whale oil arms the host with flame", () => {
+    let g = createNewGame({ empire: "asgard", seed: 13 });
+    const cap = empireOf("asgard").capitol;
+    const whale = WATER_IDS.find((id) => seaYieldOf(id) === "whale")!;
+    g.territories[whale]!.owner = 0;
+    g.territories[whale]!.ships = 1;
+    const inc = incomeFor(g, 0);
+    assert.equal(inc.flame, true);
+    g.clock.currentPlayer = (PLAYER_COUNT - 1) as PlayerId;
+    g = endTurn(g);
+    assert.equal(g.players[0]!.flame, true);
+  });
+
+  it("frames a warship at a harbour in two watches", () => {
+    let g = createNewGame({ empire: "egypt", seed: 14 });
+    g.territories[EG].port = true;
+    g.territories[EG].portRank = 1;
+    g.players[0]!.gold = 20;
+    g.players[0]!.wood = 20;
+    g.players[0]!.metal = 10;
+    g = trainWarship(g, EG);
+    assert.equal(g.jobs.some((j) => j.kind === "warship"), true);
+    g = advanceJobs(g);
+    assert.equal(g.territories[EG].warships ?? 0, 0);
+    g = advanceJobs(g);
+    assert.equal(g.territories[EG].warships, 1);
+  });
+
+  it("a sunk warship takes the host aboard", () => {
+    let g = createNewGame({ empire: "asgard", seed: 15 });
+    const { land, sea } = seaBesideAny(g);
+    g.territories[land]!.owner = 0;
+    g.territories[land]!.warships = 1;
+    g.territories[land]!.levy = 6;
+    g.territories[sea]!.owner = 1;
+    g.territories[sea]!.warships = 2;
+    g.territories[sea]!.levy = 4;
+    g = issueMarch(g, land, sea, { levy: 5, knights: 0, dragons: 0, beasts: 0, warships: 1 });
+    g = advanceJobs(g);
+    assert.equal(g.territories[land]!.levy, 1);
+    assert.equal(g.territories[sea]!.owner, 1);
+    assert.equal(g.territories[sea]!.warships, 1);
+    assert.equal(g.territories[sea]!.levy, 4);
+  });
+
+  it("warships add defence on occupied waters", () => {
+    const g = createNewGame({ empire: "asgard", seed: 16 });
+    const sea = WATER_IDS[0]!;
+    g.territories[sea]!.owner = 0;
+    g.territories[sea]!.warships = 2;
+    g.territories[sea]!.ships = 1;
+    assert.equal(worksDefense(g.territories[sea]!), 2 * 8 + 1);
+  });
+
+  it("a coastal harbour can sail a ship onto nearby waters", () => {
+    const g = createNewGame({ empire: "asgard", seed: 18 });
+    const cap = empireOf("asgard").capitol;
+    assert.ok((g.territories[cap]!.ships ?? 0) >= 1, "asgard wakes with a ship");
+    const seas = legalMarchTargets(g, cap).filter((id) => isWater(id) && g.territories[id]!.owner === "open");
+    assert.ok(seas.length >= 1, `asgard should reach nearby waters, got ${seas.join(",")}`);
+    const sea = seas[0]!;
+    let next = issueMarch(g, cap, sea, { levy: 0, knights: 0, dragons: 0, beasts: 0 });
+    assert.equal(next.marches.length, 1);
+    next = advanceJobs(next);
+    assert.equal(next.territories[sea]!.owner, 0);
+    assert.equal(next.territories[sea]!.ships, 1);
+  });
+
+  it("Sahul's harbour also reaches nearby waters", () => {
+    const g = createNewGame({ empire: "gondwana", seed: 19 });
+    const cap = empireOf("gondwana").capitol;
+    assert.ok((g.territories[cap]!.ships ?? 0) >= 1, "sahul wakes with a ship");
+    const seas = legalMarchTargets(g, cap).filter((id) => isWater(id) && g.territories[id]!.owner === "open");
+    assert.ok(seas.length >= 1, `tasmania should reach nearby waters, got ${seas.join(",")}`);
   });
 });

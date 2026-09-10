@@ -54,7 +54,7 @@ export function LoadingScreen({
   return (
     <div className="load-screen" role="status" aria-live="polite" aria-busy="true">
       <img
-        src="/map/title-dragon.jpg"
+        src="/map/title-dragon.jpg?v=globe"
         alt=""
         width={1200}
         height={800}
@@ -64,8 +64,11 @@ export function LoadingScreen({
       />
       <div className="load-veil" aria-hidden="true" />
       <div className="load-body">
-        <p className="load-mark">The age of dragons</p>
-        <h1 className="load-title">{label}</h1>
+        <p className="load-mark">The age of dragon kings</p>
+        <h1 className="load-title">
+          Ancient Empires
+          <span className="title-hero-of">of Dragon Kings</span>
+        </h1>
         <div
           className="load-track"
           role="progressbar"
@@ -79,7 +82,7 @@ export function LoadingScreen({
             style={wait ? undefined : { width: `${pct}%` }}
           />
         </div>
-        <p className="load-copy">{wait ? "Gathering the host…" : `${pct}%`}</p>
+        <p className="load-copy">{wait ? "Gathering the host…" : `${label} · ${pct}%`}</p>
       </div>
     </div>
   );

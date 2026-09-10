@@ -1,4 +1,7 @@
-import { HOUSES, PLAYER_COUNT, SAVE_VERSION, type EmpireId, type GameState, type TerritoryState } from "./types";
+import { CAPITOL, HOUSES, PLAYER_COUNT, SAVE_VERSION, type EmpireId, type GameState, type TerritoryState } from "./types";
+import { TRIBAL_IDS } from "./tribes.gen";
+import { FLOODED_IDS } from "./flooded.gen";
+import { WATER_IDS, blankWater } from "./waters";
 
 const KEY = "ancient-empires.save";
 const BACKUP = "ancient-empires.save.bak";
@@ -340,6 +343,7 @@ function blankTribe(id: string): TerritoryState {
     farm: false,
     farmRank: 0,
     ships: 0,
+    warships: 0,
     rams: 0,
     catapults: 0,
     ladders: 0,
@@ -509,6 +513,60 @@ function migrate(raw: GameState): GameState {
       if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
       if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
     }
+    if (s.version < 85) {
+      for (const id of TRIBAL_IDS) {
+        if (!s.territories[id]) s.territories[id] = blankTribe(id);
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
+    if (s.version < 86) {
+      for (const p of s.players ?? []) {
+        const cap = CAPITOL[p.empire as EmpireId];
+        const t = cap ? s.territories[cap] : null;
+        if (!t || t.owner !== "barbarian") continue;
+        t.owner = p.id;
+        t.castle = true;
+        t.castleRank = Math.max(t.castleRank ?? 0, 2);
+        t.fort = Math.max(t.fort ?? 0, 2);
+        t.wallRank = Math.max(t.wallRank ?? 0, 2);
+        t.towerRank = Math.max(t.towerRank ?? 0, 1);
+        t.population = Math.max(t.population ?? 0, 4);
+        t.road = true;
+      }
+    }
+    if (s.version < 87) {
+      for (const id of FLOODED_IDS) {
+        delete s.territories[id];
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
+    if (s.version < 91) {
+      for (const t of Object.values(s.territories)) {
+        t.warships = t.warships ?? 0;
+      }
+      for (const id of WATER_IDS) {
+        if (!s.territories[id]) s.territories[id] = blankWater(id);
+      }
+      for (const t of Object.values(s.territories)) {
+        if (t.besiegedFrom && !s.territories[t.besiegedFrom]) t.besiegedFrom = null;
+      }
+      if (s.jobs) s.jobs = s.jobs.filter((j) => s.territories[j.territoryId]);
+      if (s.marches) s.marches = s.marches.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.arrivals) s.arrivals = s.arrivals.filter((m) => s.territories[m.from] && s.territories[m.to]);
+      if (s.marchFrom && !s.territories[s.marchFrom]) s.marchFrom = null;
+    }
   }
   if (s.jobs) {
     for (const job of s.jobs) {
@@ -526,6 +584,7 @@ function migrate(raw: GameState): GameState {
       if (p.lastLands === undefined) p.lastLands = 1;
       if (p.specialDragons === undefined) p.specialDragons = 0;
       if (p.rareDragons === undefined) p.rareDragons = 0;
+      if (p.flame === undefined) p.flame = false;
     }
   }
   if (!s.marches) s.marches = [];

@@ -14,8 +14,8 @@ export function EndScreen({ state, onMenu }: { state: GameState; onMenu: () => v
         <p className="mt-3 text-sm text-muted">
           {house
             ? youWin
-              ? "Seven regions ends the age at once. Last throne standing also wins."
-              : "Another empire locked seven regions — or stands as the last throne."
+              ? "Seven capitals ends the age at once. Last throne standing also wins."
+              : "Another empire locked seven capitals — or stands as the last throne."
             : "The chronicles could not split the age."}
         </p>
         <p className="mt-2 text-xs text-muted">{state.log.at(-1)}</p>

@@ -3,15 +3,7 @@ import { create } from "zustand";
 import { playAiTurnsUntilBattle } from "./ai";
 import { openRaid, type RaidOutcome, type RaidState } from "./raid";
 import {
-  buildCastle,
-  buildMarket,
-  buildMine,
-  buildPort,
-  buildShip,
-  buildRoad,
-  buildFarm,
   buildSiege,
-  buildScorpion,
   beginSiege,
   abortArrival,
   commitBattle,
@@ -29,14 +21,17 @@ import {
   setMarchFrom,
   settleArrival,
   siegeBringOf,
+  raiseWorks,
   trainUnit,
+  trainWarship,
   watchReport,
+  rankShiftLines,
   cancelJob as haltJob,
   cancelMarch as haltMarch,
 } from "./engine";
-import { TERRITORY_BY_ID } from "./world";
+import { isWater, placeName } from "./waters";
 import { clearSave, loadGame, saveGame } from "./save";
-import { sfx } from "@/lib/sfx";
+import { sfx, sfxForTrain } from "@/lib/sfx";
 import { FORT_LABEL, UNIT_LABEL, UNIT_TURNS, isSiegeKind, type CardId, type Difficulty, type EmpireId, type GameState, type HostForce, type JobKind, type MarchOrder, type Opening, type PulseEvent, type UnitKind } from "./types";
 
 type SendPart = {
@@ -81,7 +76,7 @@ interface GameStore {
   pendingAttack: PendingAttack | null;
   pendingBattle: RaidState | null;
   pendingArrival: MarchOrder | null;
-  pendingWatch: string[] | null;
+  pendingWatch: { lines: string[]; shifts?: string[] } | null;
   fx: PulseEvent[];
   newGame: (opts: { empire: EmpireId; difficulty?: Difficulty; opening?: Opening }) => void;
   resume: () => boolean;
@@ -103,6 +98,7 @@ interface GameStore {
   battleCancel: (outcome: RaidOutcome | null) => void;
   dismissWatch: () => void;
   finishTurn: () => void;
+  leave: () => void;
   abandon: () => void;
 }
 
@@ -141,6 +137,7 @@ function keepOn(state: GameState, id: string | null | undefined): number {
 
 function sendFor(state: GameState, id: string | null | undefined) {
   if (!id) return resetSend(undefined);
+  if (isWater(id)) return resetSend(undefined);
   return resetSend(state.territories[id], keepOn(state, id));
 }
 
@@ -207,11 +204,13 @@ export const useGame = create<GameStore>((set, get) => ({
       pendingAttack: null,
       pendingBattle: null,
       pendingArrival: null,
-      pendingWatch: [
-        "Watch 1 begins.",
-        "Stone walls hold your seat. Tribal lands wake as open camps.",
-        "Training and marches take a watch. Leave a watch on the seat — an empty capital still fights, and you will see the battle.",
-      ],
+      pendingWatch: {
+        lines: [
+          "Watch 1 begins.",
+          "Stone walls hold your seat. Tribal lands wake as open camps.",
+          "Training and marches take a watch. Leave a watch on the seat — an empty capital still fights, and you will see the battle.",
+        ],
+      },
       fx: [],
     });
   },
@@ -283,9 +282,16 @@ export const useGame = create<GameStore>((set, get) => ({
     ) {
       const fromId = state.marchFrom;
       const fromTerr = state.territories[fromId]!;
-      const payload = composeAttack(fromTerr, fromId, id, send);
+      const seaHop = isWater(id) || isWater(fromId);
+      const sendForSea =
+        seaHop && send.levy + send.bowmen + send.knights + send.dragons + send.beasts > 0 && (fromTerr.warships ?? 0) < 1
+          ? { levy: 0, bowmen: 0, knights: 0, dragons: 0, beasts: 0, rams: 0, catapults: 0, ladders: 0, towers: 0 }
+          : send;
+      const payload = composeAttack(fromTerr, fromId, id, sendForSea);
       const troops = payload.levy + payload.bowmen + payload.knights + payload.dragons + payload.beasts;
-      if (troops < 1 && t.besiegedFrom !== fromId) return;
+      const fleet = (fromTerr.ships ?? 0) + (fromTerr.warships ?? 0);
+      const fleetHop = seaHop && fleet > 0 && (isWater(id) || troops > 0);
+      if (troops < 1 && t.besiegedFrom !== fromId && !fleetHop) return;
       set({
         selected: fromId,
         pendingAttack: payload,
@@ -359,7 +365,7 @@ export const useGame = create<GameStore>((set, get) => ({
     const next = trainUnit(state, selected, kind);
     if (next === state) return;
     const wait = UNIT_TURNS[kind];
-    sfx("ok");
+    sfx(sfxForTrain(kind));
     set({
       state: persist(next),
       fx: [
@@ -378,23 +384,11 @@ export const useGame = create<GameStore>((set, get) => ({
     const site = isSiegeKind(kind) && pendingAttack ? pendingAttack.from : selected;
     if (!state || !site) return;
     const fn =
-      kind === "port"
-        ? buildPort
-        : kind === "mine"
-          ? buildMine
-          : kind === "castle"
-            ? buildCastle
-            : kind === "market"
-              ? buildMarket
-              : kind === "road"
-                ? buildRoad
-                : kind === "farm"
-                  ? buildFarm
-                  : kind === "scorpion"
-                    ? buildScorpion
-                  : isSiegeKind(kind)
-                    ? (s: GameState, id: string) => buildSiege(s, id, kind)
-                    : buildShip;
+      kind === "warship"
+        ? trainWarship
+        : isSiegeKind(kind)
+          ? (s: GameState, id: string) => buildSiege(s, id, kind)
+          : (s: GameState, id: string) => raiseWorks(s, id, kind);
     const next = fn(state, site);
     if (next === state) return;
     const job = next.jobs.find((j) => j.territoryId === site && j.kind === kind);
@@ -405,7 +399,7 @@ export const useGame = create<GameStore>((set, get) => ({
         : kind === "tower"
           ? "Siege tower"
           : kind.charAt(0).toUpperCase() + kind.slice(1);
-    sfx("ok");
+    sfx("build");
     set({
       state: persist(next),
       fx: [
@@ -502,10 +496,10 @@ export const useGame = create<GameStore>((set, get) => ({
     const { state, pendingAttack } = get();
     if (!state || !pendingAttack) return;
     const dest = state.territories[pendingAttack.to]!;
-    if (dest.owner === 0) return;
+    if (dest.owner === 0 || dest.owner === "open" || isWater(pendingAttack.to)) return;
     const next = persist(beginSiege(state, pendingAttack.from, pendingAttack.to));
     if (next === state) return;
-    const place = TERRITORY_BY_ID[pendingAttack.to]?.name ?? "the city";
+    const place = placeName(pendingAttack.to);
     sfx("ok");
     set({
       state: setMarchFrom(next, pendingAttack.from),
@@ -630,8 +624,23 @@ export const useGame = create<GameStore>((set, get) => ({
       pendingAttack: null,
       pendingBattle: paused.battle,
       pendingArrival: paused.battle ? (next.arrivals ?? [])[0] ?? null : null,
-      pendingWatch: paused.battle ? null : report,
+      pendingWatch: paused.battle ? null : { lines: report, shifts: rankShiftLines(before, next) },
       fx: drained.events.map((e) => ({ ...e, text: "" })),
+    });
+  },
+  leave: () => {
+    const { state } = get();
+    if (state) saveGame(state);
+    sfx("ok");
+    set({
+      state: null,
+      selected: null,
+      pendingOccupy: null,
+      pendingAttack: null,
+      pendingBattle: null,
+      pendingWatch: null,
+      pendingArrival: null,
+      fx: [],
     });
   },
   abandon: () => {

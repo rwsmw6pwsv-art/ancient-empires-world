@@ -1,5 +1,7 @@
-import type { ContinentId, EmpireId } from "./types";
+import type { ContinentId, EmpireId, TerritoryState } from "./types";
+import { CAPITOL } from "./types";
 import { LANDSCAPE_GEN, OCEAN_LABELS as OCEAN_LABELS_GEN } from "./lands.gen";
+import { TRIBAL_LANDSCAPE } from "./tribes.gen";
 
 export type TerrainId =
   | "desert"
@@ -174,7 +176,7 @@ export const TERRAIN_TEXTURE: Record<TerrainId, string> = {
   mediterranean: "/map/terrain/grass.jpg",
 };
 
-export const WORLD_SRC = "/map/world-v130.webp";
+export const WORLD_SRC = "/map/world-v136.webp";
 
 export const BATTLE_UNIT_SRC: Record<"levy" | "bowman" | "knight" | "dragon", string> = {
   levy: "/map/battle/levy.jpg",
@@ -204,9 +206,51 @@ export const CITY_ART_SRC: Record<"camp" | "wood" | "stone" | "high" | "outer" |
   ring: "/map/battle/cities/ring.png?v=5",
 };
 
+export type CityArtId = keyof typeof CITY_ART_SRC;
+
+/** Same pick battle mode uses: camp, palisade, stone, keep, outer ring, moats. */
+export function cityArtForRanks(wallRank: number, outerWallRank: number, moatRank: number, camp = false): CityArtId {
+  if (camp || (wallRank <= 0 && outerWallRank <= 0)) return "camp";
+  if (moatRank >= 3) return "ring";
+  if (moatRank >= 2) return "moat2";
+  if (moatRank >= 1) return outerWallRank > 0 ? "moat2" : "moat1";
+  if (outerWallRank >= 1) return "outer";
+  if (wallRank >= 3) return "high";
+  if (wallRank >= 2) return "stone";
+  return "wood";
+}
+
+export function cityArtForTerritory(t: {
+  owner: TerritoryState["owner"];
+  wallRank?: number;
+  outerWallRank?: number;
+  moatRank?: number;
+}): CityArtId {
+  return cityArtForRanks(t.wallRank ?? 0, t.outerWallRank ?? 0, t.moatRank ?? 0, t.owner === "barbarian");
+}
+
+export function cityArtSrc(t: {
+  owner: TerritoryState["owner"];
+  wallRank?: number;
+  outerWallRank?: number;
+  moatRank?: number;
+}): string {
+  return CITY_ART_SRC[cityArtForTerritory(t)];
+}
+
+
 export const SCORPION_ART_SRC = "/map/battle/units/scorpion.png?v=4";
 export const TOWER_WOOD_SRC = "/map/battle/units/tower-wood.png?v=4";
 export const TOWER_STONE_SRC = "/map/battle/units/tower-stone.png?v=4";
+
+export const DEFENSE_SRC = {
+  walls: "/map/props/defense-walls.svg",
+  "outer-walls": "/map/props/defense-outer.svg",
+  "keep-works": "/map/props/defense-keep.svg",
+  towers: "/map/props/defense-towers.svg",
+  moats: "/map/props/defense-moats.svg",
+  scorpion: "/map/props/defense-scorpion.svg",
+} as const;
 
 export const BATTLE_SLASH_SRC = "/map/battle/slash.jpg";
 
@@ -226,12 +270,18 @@ export const PROP_SRC = {
   dragon: "/map/props/dragon.png",
   knight: "/map/props/knight.png",
   scorpion: "/map/props/scorpion.jpg",
-  gold: "/map/props/gold.png",
-  silver: "/map/props/silver.svg",
+  gold: "/map/props/gold.svg?v=ingot",
+  silver: "/map/props/silver.svg?v=coins",
   wood: "/map/props/wood.png",
   stone: "/map/props/stone.png",
   metal: "/map/props/metal.svg",
   food: "/map/props/food.svg",
+  ship: "/map/props/ship.svg",
+  warship: "/map/props/warship.svg",
+  fish: "/map/props/fish.svg",
+  shellfish: "/map/props/shellfish.svg",
+  whale: "/map/props/whale.svg",
+  treasure: "/map/props/treasure.svg",
   pyramids: "/map/props/pyramids.png",
   teocalli: "/map/props/teocalli.png",
   gardens: "/map/props/gardens.png",
@@ -412,6 +462,22 @@ export const BEAST_SRC: Record<BeastId, string> = {
   giant: "/map/fauna/giant.png",
 };
 
+export const KING_SRC: Record<EmpireId, string> = {
+  asgard: "/map/kings/asgard.jpg?v=2",
+  eldorado: "/map/kings/eldorado.jpg?v=2",
+  aztec: "/map/kings/aztec.jpg?v=2",
+  tartaria: "/map/kings/tartaria.jpg?v=2",
+  siberia: "/map/kings/siberia.jpg?v=2",
+  lumuria: "/map/kings/lumuria.jpg?v=2",
+  egypt: "/map/kings/egypt.jpg?v=2",
+  sumer: "/map/kings/sumer.jpg?v=2",
+  cape: "/map/kings/cape.jpg?v=2",
+  gondwana: "/map/kings/gondwana.jpg?v=2",
+  thule: "/map/kings/thule.jpg?v=2",
+  alaska: "/map/kings/alaska.jpg?v=2",
+  atlantis: "/map/kings/atlantis.jpg?v=2",
+};
+
 export const BEAST_LABEL: Record<BeastId, string> = {
   direwolf: "Direwolf",
   rhino: "Rhino",
@@ -450,8 +516,33 @@ export const SEA_LIFE: { fauna: FaunaId; x: number; y: number; w: number; h: num
   { fauna: "penguin", x: 820, y: 980, w: 24, h: 20 },
 ];
 
-export const LANDSCAPE: Record<string, LandscapeDef> = LANDSCAPE_GEN as Record<string, LandscapeDef>;
+export const LANDSCAPE: Record<string, LandscapeDef> = {
+  ...LANDSCAPE_GEN,
+  ...TRIBAL_LANDSCAPE,
+} as Record<string, LandscapeDef>;
+
+const WONDER_BY_EMPIRE: Partial<Record<EmpireId, WonderId>> = {
+  asgard: "icewall",
+  eldorado: "eldorado",
+  aztec: "teocalli",
+  tartaria: "pagoda",
+  lumuria: "stupa",
+  egypt: "pyramids",
+  sumer: "gardens",
+  cape: "lighthouse",
+  gondwana: "reefshrine",
+  thule: "meadhall",
+  atlantis: "pantheon",
+};
+
+const WONDER_AT_CAPITAL: Record<string, WonderId> = Object.fromEntries(
+  (Object.entries(WONDER_BY_EMPIRE) as [EmpireId, WonderId][]).map(([empire, wonder]) => [CAPITOL[empire], wonder]),
+);
 
 export function landscapeOf(id: string): LandscapeDef {
-  return LANDSCAPE[id] ?? { terrain: "grass" };
+  const base = LANDSCAPE[id] ?? { terrain: "grass" };
+  const wonder = WONDER_AT_CAPITAL[id];
+  if (base.wonder === wonder) return base;
+  const { wonder: _old, ...rest } = base;
+  return wonder ? { ...rest, wonder } : rest;
 }

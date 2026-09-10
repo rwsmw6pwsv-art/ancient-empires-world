@@ -1,5 +1,6 @@
 import { Footprints, Hammer, Shield, Swords } from "lucide-react";
-import { BATTLE_UNIT_SRC, PROP_SRC, RESOURCE_TINT, SIEGE_SRC, fortProp } from "@/lib/game/landscape";
+import { BATTLE_UNIT_SRC, DEFENSE_SRC, PROP_SRC, RESOURCE_TINT, SIEGE_SRC, fortProp } from "@/lib/game/landscape";
+import type { DefenseKind } from "@/lib/game/defense";
 import type { SiegeKind, UnitKind } from "@/lib/game/types";
 import { SIEGE_LABEL, UNIT_LABEL_PLURAL } from "@/lib/game/types";
 import { cn } from "@/lib/utils";
@@ -115,7 +116,7 @@ export function UnitMark({
   );
 }
 
-export function WorkMark({ kind, fort }: { kind: "port" | "castle" | "market" | "mine" | "ship" | "road" | "farm" | "walls"; fort?: number }) {
+export function WorkMark({ kind, fort }: { kind: "port" | "castle" | "market" | "mine" | "ship" | "warship" | "road" | "farm" | "walls"; fort?: number }) {
   const src =
     kind === "port"
       ? PROP_SRC.port
@@ -129,8 +130,16 @@ export function WorkMark({ kind, fort }: { kind: "port" | "castle" | "market" | 
               ? PROP_SRC.farm
               : kind === "road"
                 ? PROP_SRC.road
-                : PROP_SRC.port;
+                : kind === "warship"
+                  ? PROP_SRC.warship
+                  : kind === "ship"
+                    ? PROP_SRC.ship
+                    : PROP_SRC.port;
   return <img src={src} alt="" className="hud-icon" />;
+}
+
+export function DefenseMark({ kind }: { kind: DefenseKind }) {
+  return <img src={DEFENSE_SRC[kind]} alt="" className="hud-icon hud-icon-defense" />;
 }
 
 export function ActionIcon({ kind, className }: { kind: "train" | "march" | "build" | "defend"; className?: string }) {

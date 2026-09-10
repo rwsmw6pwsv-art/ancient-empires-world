@@ -370,17 +370,55 @@ function drawWall(ctx: CanvasRenderingContext2D, wall: RaidState["walls"][number
     return;
   }
   if (wall.gate) {
-    ctx.fillStyle = frac < 0.45 ? "rgba(180,90,74,0.55)" : "rgba(12,11,10,0.35)";
-    ctx.fillRect(-hw * 0.6, -hh * 0.5, wall.w * 0.6, wall.h);
+    const wood = frac > 0.45 ? "#6a4a2e" : "#4a3020";
+    const plank = frac > 0.45 ? "#8a6240" : "#5a3a28";
+    const iron = frac > 0.45 ? "#3a342c" : "#2a221c";
+    const leafW = hw * 0.96;
+    const leafH = hh * 1.55;
+    ctx.fillStyle = "rgba(12,11,10,0.45)";
+    ctx.fillRect(-leafW, -leafH + 3, leafW * 2, leafH * 2);
+    ctx.fillStyle = wood;
+    ctx.fillRect(-leafW, -leafH, leafW - 1, leafH * 2);
+    ctx.fillRect(1, -leafH, leafW - 1, leafH * 2);
+    ctx.strokeStyle = plank;
+    ctx.lineWidth = 1.4;
+    const plankGap = Math.max(4, leafW / 4);
+    ctx.beginPath();
+    for (let px = -leafW + plankGap; px < -1; px += plankGap) {
+      ctx.moveTo(px, -leafH + 2);
+      ctx.lineTo(px, leafH - 2);
+    }
+    for (let px = 1 + plankGap; px < leafW; px += plankGap) {
+      ctx.moveTo(px, -leafH + 2);
+      ctx.lineTo(px, leafH - 2);
+    }
+    ctx.stroke();
+    ctx.fillStyle = iron;
+    ctx.fillRect(-leafW + 2, -3, leafW * 2 - 4, 6);
+    ctx.fillStyle = "#c4b496";
+    ctx.beginPath();
+    ctx.arc(-4, 0, 1.8, 0, Math.PI * 2);
+    ctx.arc(4, 0, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = iron;
+    ctx.beginPath();
+    ctx.arc(-leafW + 5, -leafH * 0.45, 2.2, 0, Math.PI * 2);
+    ctx.arc(-leafW + 5, leafH * 0.45, 2.2, 0, Math.PI * 2);
+    ctx.arc(leafW - 5, -leafH * 0.45, 2.2, 0, Math.PI * 2);
+    ctx.arc(leafW - 5, leafH * 0.45, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(12,11,10,0.55)";
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(-leafW, -leafH, leafW * 2, leafH * 2);
     const outerStanding = raid.walls.some((w) => w.ring === "outer" && w.gate && w.hp > 0);
     const showLabel = !outerStanding || wall.ring === "outer";
-    if (showLabel) labelPlate(ctx, 0, -hh - 10, "GATE", "#e8dcc4");
+    if (showLabel) labelPlate(ctx, 0, -leafH - 10, "GATE", "#e8dcc4");
     if (frac < 1) {
       const barW = Math.max(18, wall.w * 0.8);
       ctx.fillStyle = "rgba(12,11,10,0.75)";
-      ctx.fillRect(-barW / 2, hh + 4, barW, 4);
+      ctx.fillRect(-barW / 2, leafH + 4, barW, 4);
       ctx.fillStyle = frac > 0.45 ? "#cfc6b0" : "#b45a4a";
-      ctx.fillRect(-barW / 2, hh + 4, barW * frac, 4);
+      ctx.fillRect(-barW / 2, leafH + 4, barW * frac, 4);
     }
     ctx.restore();
     return;
@@ -439,6 +477,26 @@ function drawShot(ctx: CanvasRenderingContext2D, sh: RaidState["shots"][number])
 function drawBuilding(ctx: CanvasRenderingContext2D, b: RaidBuilding, imgs: Record<string, HTMLImageElement>, _raid: RaidState) {
   const vr = b.kind === "keep" ? b.r + 4 : b.r + 2;
   const frac = b.hp / b.max;
+  if (b.kind === "archer" && b.gatePost) {
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    const s = Math.max(8, b.r);
+    ctx.fillStyle = "rgba(12,11,10,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.55, s * 0.9, s * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = frac > 0.45 ? "#6a6258" : "#4a4038";
+    ctx.fillRect(-s * 0.7, -s * 1.15, s * 1.4, s * 1.7);
+    ctx.fillStyle = frac > 0.45 ? "#8a8274" : "#5a5248";
+    ctx.fillRect(-s * 0.85, -s * 1.35, s * 1.7, s * 0.32);
+    const merlon = s * 0.28;
+    for (let i = 0; i < 4; i++) {
+      ctx.fillRect(-s * 0.85 + i * (s * 1.7) / 4, -s * 1.55, merlon, s * 0.22);
+    }
+    ctx.fillStyle = "rgba(12,11,10,0.55)";
+    ctx.fillRect(-s * 0.22, -s * 0.55, s * 0.44, s * 0.7);
+    ctx.restore();
+  }
   if (b.kind === "scorpion") {
     const img = imgs.scorpionArt;
     const s = vr * 1.7;
